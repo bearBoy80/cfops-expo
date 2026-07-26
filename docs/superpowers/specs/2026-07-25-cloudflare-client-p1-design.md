@@ -135,6 +135,7 @@ analytics_hourly  account_id · zone_id · hour_bucket · requests · ...       
 | priority | INTEGER | 同账户多凭证时的选用顺序（权限更全的优先） |
 
 - `clientFor(accountId)`：从该账户可用凭证中按 priority 选一份健康的建 SDK client；某凭证 401 时自动降级到下一份，全部失效才把账户标 degraded
+- **同账户多凭证的权限可能不同**（scoped token 也许只有 DNS 读权限）：某凭证对某资源 403 时按 priority 换下一份重试，全部 403 才把该（账户 × 资源）标 degraded；同步 job 以账户为键，多凭证不会导致重复拉取
 - 重复绑定天然幂等：owner 的 token 绑入时，账户 B 已存在 → 只新增一行关联 + 一行凭证，资源数据不重不冲
 
 **settings** — 键值偏好：`key TEXT PK`、`value TEXT`（JSON），存主题、上次选中账户等。
