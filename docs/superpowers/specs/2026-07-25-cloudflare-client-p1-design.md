@@ -32,7 +32,7 @@
 | 层 | 选型 |
 |---|---|
 | 框架 | Expo（最新 SDK）+ TypeScript + Expo Router |
-| 导航 | NativeTabs 5 Tab，每 Tab 独立 Stack |
+| 导航 | Expo Router JS Tabs 5 Tab（设计稿为自定义胶囊高亮样式，NativeTabs 无法自定义复刻，故不用），每 Tab 独立 Stack |
 | 样式 | NativeWind + 主题 token（映射设计稿 CSS 变量，深/浅色） |
 | 图表 | Victory Native XL + @shopify/react-native-skia + react-native-reanimated |
 | API | `cloudflare` npm SDK（资源管理）+ 自写 GraphQL Analytics 封装（~50 行，分析数据） |
