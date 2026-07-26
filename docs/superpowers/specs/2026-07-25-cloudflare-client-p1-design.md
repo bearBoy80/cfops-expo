@@ -1,0 +1,221 @@
+# Cloudflare 移动客户端 P1 技术方案
+
+日期：2026-07-25
+状态：待用户审阅
+设计稿：Figma Make 导出（`Cloudflare Client App Design`，https://www.figma.com/design/cAQhbDTwkwItiWqDGs7GAr/Cloudflare-Client-App-Design）
+
+## 1. 背景与目标
+
+基于已定稿的 Figma 设计（iOS 风格、5 Tab、多账户 Cloudflare 管理客户端），用 Expo 构建 iOS + Android 双端 App。P1 目标：**导航骨架按设计稿全铺，核心链路接真实 Cloudflare API**。
+
+### 已确认的关键决策
+
+| 决策项 | 结论 |
+|---|---|
+| 平台 | iOS + Android 同时支持 |
+| 图表 | Victory Native XL（Skia + Reanimated，GPU 原生渲染，双端一致） |
+| Cloudflare 接入 | 官方 `cloudflare` TS SDK；OAuth 优先 + API Token 粘贴兜底 |
+| App 账号 | 纯本地账号（无后端），密码安全存储，生物识别解锁 |
+| 本地存储 | expo-sqlite（drizzle ORM）+ expo-secure-store（敏感凭证） |
+| 数据层 | React Query + SQLite 规范化存储 + 时序累积（方案 A 增强版） |
+| 异步解耦 | TanStack Query + p-queue + mitt + 自写 SyncEngine/SyncScheduler |
+| P1 范围 | 骨架全铺 + 核心真数据（见 §8） |
+
+### 非目标（P1 不做）
+
+- Storage（R2/KV/D1）、Alerts/LB/Audit/Billing/Certs/Cache 二级页的真实数据（骨架 + EmptyState 占位）
+- Pages 项目列表、写操作（Purge Cache / Pause Zone / DNS 编辑等，UI 存在但禁用或 P2）
+- App 后台周期同步（expo-background-task）、E2E 测试、多设备同步、推送
+
+## 2. 技术栈
+
+| 层 | 选型 |
+|---|---|
+| 框架 | Expo（最新 SDK）+ TypeScript + Expo Router |
+| 导航 | NativeTabs 5 Tab，每 Tab 独立 Stack |
+| 样式 | NativeWind + 主题 token（映射设计稿 CSS 变量，深/浅色） |
+| 图表 | Victory Native XL + @shopify/react-native-skia + react-native-reanimated |
+| API | `cloudflare` npm SDK（资源管理）+ 自写 GraphQL Analytics 封装（~50 行，分析数据） |
+| 服务端状态 | TanStack Query v5 + SQLite persister |
+| 本地存储 | expo-sqlite + drizzle ORM；expo-secure-store |
+| 认证 | expo-auth-session（OAuth PKCE）+ expo-local-authentication（生物识别） |
+| 异步 | p-queue（并发队列）+ mitt（事件总线）——均为纯 JS，双端无兼容问题 |
+
+**为什么需要 GraphQL 封装**：请求量曲线、防火墙事件等分析数据只在 Cloudflare GraphQL Analytics API 提供（REST zone analytics 已废弃），官方 TS SDK 不覆盖。认证复用同一 token。
+
+## 3. 认证与账户模型
+
+两层，互相独立：
+
+### 3.1 App 本地账号（无服务器）
+
+- 首次启动"注册" = 创建本地档案：设置密码 → 加盐慢哈希后仅存 SecureStore（不落 SQLite、不存明文）
+- 解锁：密码 或 Face ID/指纹（expo-local-authentication）
+- 作用仅为锁住 App 入口，与 Cloudflare 无关
+
+### 3.2 Cloudflare 账户绑定（登录后，可绑多个）
+
+- **首选 OAuth**：在 CF Dashboard 自助注册 OAuth client（2026-06 起全面开放，见 https://developers.cloudflare.com/fundamentals/oauth/），App 内 expo-auth-session 走 Authorization Code + PKCE（S256），获得 access/refresh token
+- **兜底 API Token**：粘贴绑定，`user.tokens.verify` + `accounts.list` 校验并识别账户
+- 凭证全部存 SecureStore，按 binding id 分 key；SQLite 只存非敏感元数据（账户名、plan、颜色、认证类型）
+- token 刷新收在数据层 token provider，UI 无感知
+
+## 4. 数据层
+
+```
+UI (hooks) → TanStack Query → 服务层 queryFn：
+                                fetch API → ResourceStore.upsert(...) → 返回数据
+                   ↕                              ↓
+            内存缓存（UI 响应）          SQLite 规范化表（按资源类型）
+```
+
+### 4.1 ResourceStore（按资源可插拔）
+
+- drizzle + expo-sqlite：类型安全表定义 + 迁移
+- 每类资源一个 store 模块，统一接口：
+
+```ts
+interface ResourceStore<T> {
+  upsertMany(bindingId: string, rows: T[]): Promise<void>;
+  list(bindingId: string | 'all', filter?): Promise<Stored<T>[]>; // Stored 带 fetched_at
+  clear(bindingId: string): Promise<void>; // 解绑时清理
+}
+```
+
+- 写入时机在服务层 queryFn 内（fetch 成功 → upsert → return），显式、可测试
+- 每行带 `binding_id` + `fetched_at`：多账户隔离、离线"数据截至 xx"展示、后期 diff/历史
+- **P1 落地**：机制 + 两个示范实现（`zones`、`dns_records`）；`workers`、`r2_buckets`、`kv_namespaces`、`d1_databases` 等 P2 按同一模式加表，不动框架
+
+### 4.2 分析时序数据本地累积
+
+```
+analytics_daily   binding_id · zone_id · date        · requests · threats · bandwidth · cache_hit · visitors · is_final · fetched_at
+analytics_hourly  binding_id · zone_id · hour_bucket · requests · ...                              · is_final · fetched_at
+```
+
+- **定型规则**：bucket 结束时间 < now(UTC) → `is_final = true`，永不重拉、永不覆盖；当前天/小时非 final，每次刷新覆盖
+- **增量读取**：图表 queryFn = 本地读 final bucket → 只对缺口 + 非 final 尾部发 GraphQL → upsert 回表 → 返回合并结果
+- **时间范围与数据源**：当天/24h 用 hourly（只拉当前小时+缺口）；**7d/30d 用 daily，几乎纯 SQLite，只补拉"今天"一个点**；1h 档为分钟级实时数据（GraphQL `httpRequests1mGroups`），只走内存/快照缓存，不入累积表
+- **回填**：绑定成功后后台按 zone 回填近 30 天 daily（一次 GraphQL）；hourly 滚动保留 7 天，daily 永久保留
+- 价值：历史数据（如 7月1日访问量）定型后固化本地，超出 Cloudflare 保留期后仍可查
+- 防火墙事件流（逐条 event）只做快照缓存不累积；每日拦截计数进 `analytics_daily.threats`
+
+### 4.3 SQLite 布局
+
+| 类别 | 表 |
+|---|---|
+| App 域 | `bindings`（绑定元数据）、`settings`（主题等偏好） |
+| 资源域（可扩展） | `zones`、`dns_records`（P1）；workers/r2/kv/d1…（P2） |
+| 时序累积 | `analytics_daily`、`analytics_hourly` |
+| 快照 | `query_cache`（TanStack Query persister） |
+
+### 4.4 多账户聚合
+
+- Query key 规约：`[bindingId, resource, params]`
+- "All Accounts" 视图 = `useQueries` 并发查所有绑定 → 内存合并排序
+- 单账户失败不拖垮聚合视图（对应设计稿 per-account 健康状态行）
+
+## 5. 异步同步引擎（SyncEngine）
+
+```
+触发源（绑定成功 / 调度器 / 手动下拉 / 进入屏幕）
+        ↓ 投递 job（不阻塞 UI）
+SyncEngine：p-queue 队列（并发上限 2，支持优先级）
+  job 类型：initial-sync · analytics-backfill · resource-sync · tail-refresh
+        ↓ 完成后
+① upsert SQLite → ② invalidateQueries(相关 key) → ③ mitt 广播 sync:done
+```
+
+- **UI 本地优先、永不 await 同步**：先渲染本地数据，SyncEngine 后台补新，query 失效自动刷新
+- **通知分级**：常规刷新静默；用户显式触发的完成时 toast；失败标 degraded 状态，不弹阻断错误
+- **job 幂等**（upsert + final 定型保证重复执行无害）；失败重试 2 次后记录状态，下次触发再补
+- 通知/解耦的大头由 TanStack Query 承担（invalidate = 发布-订阅）；mitt 只管 query 体系外事件（toast、绑定状态、同步进度）
+- 队列不持久化：job 可随时从本地状态（fetched_at + final 规则）重新推导，重启不丢
+
+## 6. 定时拉取与规模化（SyncScheduler）
+
+**声明式调度**，每类资源注册时声明策略：
+
+```ts
+syncPolicy: {
+  zones:           { ttl: '30m', priority: 'normal' },
+  dns_records:     { ttl: '1h',  priority: 'low' },
+  analytics_tail:  { ttl: '5m',  priority: 'high', onlyWhenVisible: true },
+  analytics_daily: { ttl: '24h', priority: 'low' },
+}
+```
+
+- 不设 per-job 定时器：**全局 tick（前台 60s）扫描 SQLite `fetched_at`**，过期的（binding × 资源）组合生成 job 入队
+- 无状态可恢复：该拉什么永远从"数据多旧"推导；重启不丢调度
+- 规模线性：100 账号也只是扫表批量入队；到期任务加 jitter 打散避免齐发；可见屏幕 job 高优先级插队
+- **API 配额治理**（CF 限流按账户/token，约 1200 次/5min）：
+  - 按 binding 分桶限速（保守 100 次/5min），账户之间互不挤占
+  - 合并请求：GraphQL 一次查多 zone（`zoneTag_in`）；REST 列表 `per_page=50`
+  - 429 → 该 binding 熔断至 `Retry-After`，同账户 job 顺延，其它账户不受影响
+- P2：expo-background-task（iOS BGAppRefresh / Android WorkManager）跑小 job；大批量同步永远在前台
+
+## 7. 导航与 UI 结构
+
+```
+app/
+  _layout.tsx          providers（Query/Theme/Account）+ 解锁门禁
+  unlock               解锁屏（密码 / Face ID）
+  onboarding/          首次流程：创建本地账号 → 绑定 CF（OAuth 或粘贴 Token）
+  (tabs)/
+    (home)/     index + dns / firewall / analytics / alerts / lb / audit / billing
+    (zones)/    index + [zoneId] + [zoneId]/ssl + [zoneId]/cache
+    (storage)/  index（P1 骨架）
+    (compute)/  index（Workers/Pages 分段）
+    (more)/     index + 设置
+  account-sheet        全局账户切换（formSheet 模态）
+```
+
+- 设计稿共享组件一比一移植：`ListRow`、`Card`、`SectionLabel`、`MetricTile`、`Pill`、`AccountChip`、`EmptyState`、`AccountBar`
+- 主题：设计稿 CSS 变量（`--app-bg`、`--app-surface`、label 透明度梯度）→ NativeWind token，深/浅色存 `settings`；主色 Cloudflare 橙 `#f6821f`
+- 图表统一封装 `TrafficChart`（面积图 + 渐变 + 1h/24h/7d/30d 范围切换），Home 与 Analytics 复用
+
+## 8. P1 API 映射
+
+| 屏幕 | 数据 | 来源 |
+|---|---|---|
+| Onboarding/绑定 | OAuth PKCE、Token 校验、账户识别 | SDK：`user.tokens.verify`、`accounts.list` |
+| Home | 聚合指标 + 账户健康 + 请求曲线 | zones + analytics 多账户聚合 |
+| Zones | 列表/详情 | SDK：`zones.list` |
+| DNS | 记录列表 | SDK：`dns.records.list` |
+| Analytics | 曲线 + 指标分解 | GraphQL：`httpRequests1hGroups` / `1dGroups`（增量拉取） |
+| Firewall | 实时事件 + 拦截计数 | GraphQL：`firewallEventsAdaptive` |
+| Compute | Workers 只读列表 | SDK：`workers.scripts.list`；Pages P2 |
+| Storage / More 二级页 | 骨架 + EmptyState | P2 |
+
+## 9. 错误处理
+
+- **聚合视图账户级隔离**：单账户失败只在该账户行标 degraded/error（设计稿已有此 UI）
+- **401/token 失效**：先 OAuth refresh；失败则绑定标"需重新授权"，引导重绑，不清数据
+- **429**：全局 fetch 封装尊重 `Retry-After` + binding 级熔断（§6）；React Query 指数退避
+- **离线**：展示 SQLite 数据 + "数据截至 xx:xx" 横幅，恢复后自动刷新
+- 全局 ErrorBoundary + toast
+
+## 10. 测试策略
+
+- **单测重点**（数据层是核心资产）：时序增量拉取/final 定型、多账户聚合合并、SyncScheduler 到期推导与限速、token provider 刷新流、GraphQL helper
+- **组件测试**：RNTL + mock QueryClient：Home、Zones、绑定流程
+- **E2E**：P2（Maestro）
+
+## 11. 风险与前置验证（实施计划第一步）
+
+| 风险 | 应对 |
+|---|---|
+| `cloudflare` SDK 在 Hermes/RN 的兼容性 | **Spike 先行**：空 Expo 工程验证 zones.list 等调用；兜底 = 用 SDK 类型 + 自写轻量 fetch 层，接口形状不变 |
+| CF OAuth client 对移动端 redirect（custom scheme）的支持细节 | Spike 时用 expo-auth-session 实测；兜底 = API Token 绑定路径（本就是 P1 必备） |
+| p-queue ESM-only 打包 | Metro 支持 ESM；兜底 = eventemitter3 + 自写 50 行并发控制 |
+
+## 12. 实施顺序建议（供 writing-plans 参考）
+
+1. Spike：SDK Hermes 兼容 + OAuth redirect 验证
+2. 工程脚手架：Expo + Router + NativeWind + 主题 token + 5 Tab 骨架
+3. 本地账号 + 解锁流程
+4. CF 绑定（Token 路径先行，OAuth 随后）+ bindings 表
+5. 数据层地基：drizzle schema、ResourceStore、GraphQL helper、token provider
+6. SyncEngine + SyncScheduler + 限速
+7. 核心屏幕接真数据：Zones → DNS → Home 聚合 → Analytics（时序累积）→ Firewall
+8. Compute 只读列表、占位页、错误处理打磨、测试补齐
