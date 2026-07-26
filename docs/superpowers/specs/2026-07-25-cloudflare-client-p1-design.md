@@ -57,7 +57,8 @@
 
 - **首选 OAuth**：在 CF Dashboard 自助注册 OAuth client（2026-06 起全面开放，见 https://developers.cloudflare.com/fundamentals/oauth/），App 内 expo-auth-session 走 Authorization Code + PKCE（S256），获得 access/refresh token
 - **兜底 API Token**：粘贴绑定，`user.tokens.verify` + `accounts.list` 校验并识别账户
-- 凭证全部存 SecureStore，按 binding id 分 key；SQLite 只存非敏感元数据（账户名、plan、颜色、认证类型）
+- 凭证全部存 SecureStore，按 credential id 分 key；SQLite 只存非敏感元数据（账户名、plan、颜色、认证类型）
+- **凭证与账户是多对多**：一份凭证经 `accounts.list` 可能发现多个账户；同一账户也可被多份凭证覆盖（表结构见 §4.3）
 - token 刷新收在数据层 token provider，UI 无感知
 
 ## 4. 数据层
@@ -76,21 +77,21 @@ UI (hooks) → TanStack Query → 服务层 queryFn：
 
 ```ts
 interface ResourceStore<T> {
-  upsertMany(bindingId: string, rows: T[]): Promise<void>;
-  list(bindingId: string | 'all', filter?): Promise<Stored<T>[]>; // Stored 带 fetched_at
-  clear(bindingId: string): Promise<void>; // 解绑时清理
+  upsertMany(accountId: string, rows: T[]): Promise<void>;
+  list(accountId: string | 'all', filter?): Promise<Stored<T>[]>; // Stored 带 fetched_at
+  clear(accountId: string): Promise<void>; // 账户失去全部凭证时清理
 }
 ```
 
 - 写入时机在服务层 queryFn 内（fetch 成功 → upsert → return），显式、可测试
-- 每行带 `binding_id` + `fetched_at`：多账户隔离、离线"数据截至 xx"展示、后期 diff/历史
+- 每行带 `account_id` + `fetched_at`：多账户隔离、离线"数据截至 xx"展示、后期 diff/历史；资源归属**账户**，与拉取它的凭证无关
 - **P1 落地**：机制 + 两个示范实现（`zones`、`dns_records`）；`workers`、`r2_buckets`、`kv_namespaces`、`d1_databases` 等 P2 按同一模式加表，不动框架
 
 ### 4.2 分析时序数据本地累积
 
 ```
-analytics_daily   binding_id · zone_id · date        · requests · threats · bandwidth · cache_hit · visitors · is_final · fetched_at
-analytics_hourly  binding_id · zone_id · hour_bucket · requests · ...                              · is_final · fetched_at
+analytics_daily   account_id · zone_id · date        · requests · threats · bandwidth · cache_hit · visitors · is_final · fetched_at
+analytics_hourly  account_id · zone_id · hour_bucket · requests · ...                              · is_final · fetched_at
 ```
 
 - **定型规则**：bucket 结束时间 < now(UTC) → `is_final = true`，永不重拉、永不覆盖；当前天/小时非 final，每次刷新覆盖
@@ -102,19 +103,39 @@ analytics_hourly  binding_id · zone_id · hour_bucket · requests · ...       
 
 ### 4.3 数据表结构设计
 
-分四类：App 域（`bindings`、`settings`）、资源域（`zones`、`dns_records`，P1；workers/r2/kv/d1 等 P2 同模式扩展）、时序累积（`analytics_daily`、`analytics_hourly`）、基础设施（`sync_state`、`query_cache`）。drizzle 定义 + drizzle-kit 迁移；时间戳统一 epoch 毫秒 INTEGER。
+分四类：App 域（`credentials`、`cf_accounts`、`account_credentials`、`settings`）、资源域（`zones`、`dns_records`，P1；workers/r2/kv/d1 等 P2 同模式扩展）、时序累积（`analytics_daily`、`analytics_hourly`）、基础设施（`sync_state`、`query_cache`）。drizzle 定义 + drizzle-kit 迁移；时间戳统一 epoch 毫秒 INTEGER。
 
-**bindings** — 绑定的 CF 账户元数据（凭证不在此表，存 SecureStore，key = `cf-cred-<id>`）
+**凭证与账户分离（多对多）**。一份凭证（token/OAuth 授权）可能覆盖多个 CF 账户（用户邮箱同时是 A、B 账户成员）；同一 CF 账户也可能被多份凭证覆盖（先绑了能看 B 的成员 token，B 的 owner 后来又绑自己的 token）。因此不存在"binding = 账户"的表——绑定动作 = 添加凭证 → `accounts.list` 发现其可见账户 → 写入账户表和关联表。
+
+**credentials** — 凭证元数据（secret 存 SecureStore，key = `cf-cred-<id>`）
 
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | TEXT PK | 本地 uuid |
-| cf_account_id | TEXT UNIQUE NOT NULL | Cloudflare account id |
-| name / plan | TEXT | 账户名、套餐 |
-| color | TEXT | 账户色标（AccountChip） |
 | auth_type | TEXT | `oauth` \| `token` |
+| label | TEXT | 展示名（如 token 名称 / OAuth 登录邮箱） |
 | status | TEXT | `active` \| `reauth_required` |
 | created_at | INTEGER | |
+
+**cf_accounts** — CF 账户，全局唯一，与哪份凭证发现的无关
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | TEXT PK | Cloudflare account id |
+| name / plan | TEXT | 账户名、套餐 |
+| color | TEXT | 账户色标（AccountChip） |
+| created_at | INTEGER | |
+
+**account_credentials** — 多对多关联，复合 PK `(account_id, credential_id)`
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| account_id | TEXT | → cf_accounts.id |
+| credential_id | TEXT | → credentials.id |
+| priority | INTEGER | 同账户多凭证时的选用顺序（权限更全的优先） |
+
+- `clientFor(accountId)`：从该账户可用凭证中按 priority 选一份健康的建 SDK client；某凭证 401 时自动降级到下一份，全部失效才把账户标 degraded
+- 重复绑定天然幂等：owner 的 token 绑入时，账户 B 已存在 → 只新增一行关联 + 一行凭证，资源数据不重不冲
 
 **settings** — 键值偏好：`key TEXT PK`、`value TEXT`（JSON），存主题、上次选中账户等。
 
@@ -123,21 +144,21 @@ analytics_hourly  binding_id · zone_id · hour_bucket · requests · ...       
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | TEXT PK | CF zone id |
-| binding_id | TEXT NOT NULL，索引 | 归属绑定 |
+| account_id | TEXT NOT NULL，索引 | → cf_accounts.id（资源归属账户，与拉取用的凭证无关） |
 | name / status / plan / ssl_mode | TEXT | 列表与详情展示字段 |
 | paused | INTEGER | 0/1 |
 | raw | TEXT | 原始 JSON |
 | fetched_at | INTEGER | |
 
-**dns_records** — 同模式：`id TEXT PK`（CF record id）、`binding_id`、`zone_id`（索引）、`type`、`name`、`content`、`proxied INTEGER`、`ttl INTEGER`、`raw`、`fetched_at`
+**dns_records** — 同模式：`id TEXT PK`（CF record id）、`account_id`、`zone_id`（索引）、`type`、`name`、`content`、`proxied INTEGER`、`ttl INTEGER`、`raw`、`fetched_at`
 
-> 列表同步的删除语义：resource-sync 拉到完整列表后，除 upsert 外还删除该 scope 下不在最新结果中的行（`DELETE WHERE binding_id=? AND zone_id=? AND id NOT IN (...)`），保证本地不残留已删资源。
+> 列表同步的删除语义：resource-sync 拉到完整列表后，除 upsert 外还删除该 scope 下不在最新结果中的行（`DELETE WHERE account_id=? AND zone_id=? AND id NOT IN (...)`），保证本地不残留已删资源。
 
-**analytics_daily** — 复合 PK `(binding_id, zone_id, date)`
+**analytics_daily** — 复合 PK `(account_id, zone_id, date)`
 
 | 列 | 类型 | 说明 |
 |---|---|---|
-| binding_id / zone_id | TEXT | |
+| account_id / zone_id | TEXT | |
 | date | TEXT | `YYYY-MM-DD`（UTC） |
 | requests / cached_requests | INTEGER | 缓存命中率由二者推导 |
 | bytes / cached_bytes | INTEGER | 带宽及节省量 |
@@ -146,13 +167,13 @@ analytics_hourly  binding_id · zone_id · hour_bucket · requests · ...       
 | is_final | INTEGER | 定型标记（见 §4.2） |
 | fetched_at | INTEGER | |
 
-**analytics_hourly** — 结构同 daily，时间列为 `hour_bucket TEXT`（`YYYY-MM-DDTHH`，UTC），复合 PK `(binding_id, zone_id, hour_bucket)`；清理任务滚动删除 7 天前数据。
+**analytics_hourly** — 结构同 daily，时间列为 `hour_bucket TEXT`（`YYYY-MM-DDTHH`，UTC），复合 PK `(account_id, zone_id, hour_bucket)`；清理任务滚动删除 7 天前数据。
 
-**sync_state** — 调度器的依据（比扫业务行 fetched_at 准确，且覆盖空列表场景），复合 PK `(binding_id, resource, scope)`
+**sync_state** — 调度器的依据（比扫业务行 fetched_at 准确，且覆盖空列表场景），复合 PK `(account_id, resource, scope)`
 
 | 列 | 类型 | 说明 |
 |---|---|---|
-| binding_id | TEXT | |
+| account_id | TEXT | |
 | resource | TEXT | `zones` \| `dns_records` \| `analytics_tail` \| … |
 | scope | TEXT | 细分范围（如 zone id），无则 `*` |
 | last_synced_at | INTEGER | 成功同步时间，SyncScheduler 据此算 TTL 到期 |
@@ -162,12 +183,12 @@ analytics_hourly  binding_id · zone_id · hour_bucket · requests · ...       
 
 **query_cache** — TanStack Query persister 后端，单行 blob：`id INTEGER PK CHECK(id=1)`、`payload TEXT`、`updated_at INTEGER`。
 
-**清理策略**：解绑账户 = 各表按 `binding_id` 级联清理（含 SecureStore 凭证）；hourly 滚动 7 天；daily 永久保留。
+**清理策略**：移除凭证 = 删 `credentials` 行 + SecureStore secret + 其 `account_credentials` 关联；关联清空后**失去全部凭证的账户**才按 `account_id` 级联清理资源/时序/sync_state 数据（仍有其它凭证覆盖的账户不受影响）。hourly 滚动 7 天；daily 永久保留。
 
 ### 4.4 多账户聚合
 
-- Query key 规约：`[bindingId, resource, params]`
-- "All Accounts" 视图 = `useQueries` 并发查所有绑定 → 内存合并排序
+- Query key 规约：`[accountId, resource, params]`
+- "All Accounts" 视图 = `useQueries` 并发查所有账户 → 内存合并排序
 - 单账户失败不拖垮聚合视图（对应设计稿 per-account 健康状态行）
 
 ## 5. 异步同步引擎（SyncEngine）
@@ -200,13 +221,13 @@ syncPolicy: {
 }
 ```
 
-- 不设 per-job 定时器：**全局 tick（前台 60s）扫描 `sync_state` 表**（结构见 §4.3），`now - last_synced_at > ttl` 的（binding × 资源 × scope）组合生成 job 入队
+- 不设 per-job 定时器：**全局 tick（前台 60s）扫描 `sync_state` 表**（结构见 §4.3），`now - last_synced_at > ttl` 的（account × 资源 × scope）组合生成 job 入队
 - 无状态可恢复：该拉什么永远从"数据多旧"推导；重启不丢调度
 - 规模线性：100 账号也只是扫表批量入队；到期任务加 jitter 打散避免齐发；可见屏幕 job 高优先级插队
 - **API 配额治理**（CF 限流按账户/token，约 1200 次/5min）：
-  - 按 binding 分桶限速（保守 100 次/5min），账户之间互不挤占
+  - **按 credential（token）分桶限速**（保守 100 次/5min）——CF 限流以 token 为单位，一份凭证覆盖多账户时这些账户共享同一个桶，限速器必须建在凭证维度而非账户维度
   - 合并请求：GraphQL 一次查多 zone（`zoneTag_in`）；REST 列表 `per_page=50`
-  - 429 → 该 binding 熔断至 `Retry-After`，同账户 job 顺延，其它账户不受影响
+  - 429 → 该 credential 熔断至 `Retry-After`，使用该凭证的 job 顺延；有备选凭证的账户可切换凭证继续
 - P2：expo-background-task（iOS BGAppRefresh / Android WorkManager）跑小 job；大批量同步永远在前台
 
 ## 7. 导航与 UI 结构
@@ -245,8 +266,8 @@ app/
 ## 9. 错误处理
 
 - **聚合视图账户级隔离**：单账户失败只在该账户行标 degraded/error（设计稿已有此 UI）
-- **401/token 失效**：先 OAuth refresh；失败则绑定标"需重新授权"，引导重绑，不清数据
-- **429**：全局 fetch 封装尊重 `Retry-After` + binding 级熔断（§6）；React Query 指数退避
+- **401/token 失效**：先 OAuth refresh；失败则该 credential 标 `reauth_required`，账户若有其它可用凭证自动切换，全部失效才引导重新授权，不清数据
+- **429**：全局 fetch 封装尊重 `Retry-After` + credential 级熔断（§6）；React Query 指数退避
 - **离线**：展示 SQLite 数据 + "数据截至 xx:xx" 横幅，恢复后自动刷新
 - 全局 ErrorBoundary + toast
 
@@ -269,7 +290,7 @@ app/
 1. Spike：SDK Hermes 兼容 + OAuth redirect 验证
 2. 工程脚手架：Expo + Router + NativeWind + 主题 token + 5 Tab 骨架
 3. 本地账号 + 解锁流程
-4. CF 绑定（Token 路径先行，OAuth 随后）+ bindings 表
+4. CF 绑定（Token 路径先行，OAuth 随后）+ credentials/cf_accounts/account_credentials 表
 5. 数据层地基：drizzle schema、ResourceStore、GraphQL helper、token provider
 6. SyncEngine + SyncScheduler + 限速
 7. 核心屏幕接真数据：Zones → DNS → Home 聚合 → Analytics（时序累积）→ Firewall
