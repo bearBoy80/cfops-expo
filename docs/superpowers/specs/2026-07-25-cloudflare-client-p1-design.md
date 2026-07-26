@@ -113,7 +113,9 @@ analytics_hourly  account_id · zone_id · hour_bucket · requests · ...       
 |---|---|---|
 | id | TEXT PK | 本地 uuid |
 | auth_type | TEXT | `oauth` \| `token` |
-| label | TEXT | 展示名（如 token 名称 / OAuth 登录邮箱） |
+| label | TEXT | 展示名（token 名称等，可编辑） |
+| email | TEXT | 凭证背后的身份邮箱（`GET /user` / OAuth profile）。邮箱属于凭证身份而非 CF 账户——CF account 对象本身没有邮箱 |
+| cf_user_id | TEXT | CF user id（同一人绑两份 token 时可识别） |
 | status | TEXT | `active` \| `reauth_required` |
 | created_at | INTEGER | |
 
@@ -123,8 +125,10 @@ analytics_hourly  account_id · zone_id · hour_bucket · requests · ...       
 |---|---|---|
 | id | TEXT PK | Cloudflare account id |
 | name / plan | TEXT | 账户名、套餐 |
+| account_type | TEXT | standard / enterprise 等（来自 accounts.list） |
 | color | TEXT | 账户色标（AccountChip） |
-| created_at | INTEGER | |
+| raw | TEXT | accounts.list 原始 JSON，向前兼容 |
+| created_at / updated_at | INTEGER | |
 
 **account_credentials** — 多对多关联，复合 PK `(account_id, credential_id)`
 
@@ -136,6 +140,13 @@ analytics_hourly  account_id · zone_id · hour_bucket · requests · ...       
 
 - `clientFor(accountId)`：从该账户可用凭证中按 priority 选一份健康的建 SDK client；某凭证 401 时自动降级到下一份，全部失效才把账户标 degraded
 - **同账户多凭证的权限可能不同**（scoped token 也许只有 DNS 读权限）：某凭证对某资源 403 时按 priority 换下一份重试，全部 403 才把该（账户 × 资源）标 degraded；同步 job 以账户为键，多凭证不会导致重复拉取
+
+**多凭证下的同步语义**（以 `c1 → {A, B}`、`c2 → {A}` 为例）：
+
+1. **资源同步以账户为键**：调度器为 A 只生成一个 job（不管 A 有几份凭证）；执行时 `clientFor(A)` 按 priority 选凭证（如 c1），走 c1 的限速桶，结果 upsert 到 `account_id = A` 的行。B 的 job 只能用 c1
+2. **写入无冲突**：c1、c2 看到的是 CF 端同一份数据，行级 upsert 是幂等的 last-write-wins；`cf_accounts` 的元数据由任一凭证的 `accounts.list` 刷新，同样幂等
+3. **凭证故障切换**：c1 被 429 熔断或 401 时，A 的 job 改用 c2 继续，B 的 job 顺延等 c1 恢复
+4. **账户发现同步（credential 域 job）**：每份凭证有独立的 `account-discovery` job（低频，如 24h），重跑 `accounts.list` 并对账 `account_credentials`——你被移出账户 B 时，(B, c1) 关联被删除；B 因此失去全部凭证则触发级联清理。此类 job 在 `sync_state` 中以 credential id 为键记录（account_id 列语义泛化为 subject_id：账户域 job 存账户 id，凭证域 job 存凭证 id）
 - 重复绑定天然幂等：owner 的 token 绑入时，账户 B 已存在 → 只新增一行关联 + 一行凭证，资源数据不重不冲
 
 **settings** — 键值偏好：`key TEXT PK`、`value TEXT`（JSON），存主题、上次选中账户等。
@@ -198,7 +209,7 @@ analytics_hourly  account_id · zone_id · hour_bucket · requests · ...       
 触发源（绑定成功 / 调度器 / 手动下拉 / 进入屏幕）
         ↓ 投递 job（不阻塞 UI）
 SyncEngine：p-queue 队列（并发上限 2，支持优先级）
-  job 类型：initial-sync · analytics-backfill · resource-sync · tail-refresh
+  job 类型：initial-sync · analytics-backfill · resource-sync · tail-refresh · account-discovery（凭证域，对账可见账户）
         ↓ 完成后
 ① upsert SQLite → ② invalidateQueries(相关 key) → ③ mitt 广播 sync:done
 ```
