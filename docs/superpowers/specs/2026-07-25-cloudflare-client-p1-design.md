@@ -100,14 +100,69 @@ analytics_hourly  binding_id · zone_id · hour_bucket · requests · ...       
 - 价值：历史数据（如 7月1日访问量）定型后固化本地，超出 Cloudflare 保留期后仍可查
 - 防火墙事件流（逐条 event）只做快照缓存不累积；每日拦截计数进 `analytics_daily.threats`
 
-### 4.3 SQLite 布局
+### 4.3 数据表结构设计
 
-| 类别 | 表 |
-|---|---|
-| App 域 | `bindings`（绑定元数据）、`settings`（主题等偏好） |
-| 资源域（可扩展） | `zones`、`dns_records`（P1）；workers/r2/kv/d1…（P2） |
-| 时序累积 | `analytics_daily`、`analytics_hourly` |
-| 快照 | `query_cache`（TanStack Query persister） |
+分四类：App 域（`bindings`、`settings`）、资源域（`zones`、`dns_records`，P1；workers/r2/kv/d1 等 P2 同模式扩展）、时序累积（`analytics_daily`、`analytics_hourly`）、基础设施（`sync_state`、`query_cache`）。drizzle 定义 + drizzle-kit 迁移；时间戳统一 epoch 毫秒 INTEGER。
+
+**bindings** — 绑定的 CF 账户元数据（凭证不在此表，存 SecureStore，key = `cf-cred-<id>`）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | TEXT PK | 本地 uuid |
+| cf_account_id | TEXT UNIQUE NOT NULL | Cloudflare account id |
+| name / plan | TEXT | 账户名、套餐 |
+| color | TEXT | 账户色标（AccountChip） |
+| auth_type | TEXT | `oauth` \| `token` |
+| status | TEXT | `active` \| `reauth_required` |
+| created_at | INTEGER | |
+
+**settings** — 键值偏好：`key TEXT PK`、`value TEXT`（JSON），存主题、上次选中账户等。
+
+**zones** — PK 用 CF 资源自身 id；`raw` 保留原始 JSON 负载，向前兼容新字段
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | TEXT PK | CF zone id |
+| binding_id | TEXT NOT NULL，索引 | 归属绑定 |
+| name / status / plan / ssl_mode | TEXT | 列表与详情展示字段 |
+| paused | INTEGER | 0/1 |
+| raw | TEXT | 原始 JSON |
+| fetched_at | INTEGER | |
+
+**dns_records** — 同模式：`id TEXT PK`（CF record id）、`binding_id`、`zone_id`（索引）、`type`、`name`、`content`、`proxied INTEGER`、`ttl INTEGER`、`raw`、`fetched_at`
+
+> 列表同步的删除语义：resource-sync 拉到完整列表后，除 upsert 外还删除该 scope 下不在最新结果中的行（`DELETE WHERE binding_id=? AND zone_id=? AND id NOT IN (...)`），保证本地不残留已删资源。
+
+**analytics_daily** — 复合 PK `(binding_id, zone_id, date)`
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| binding_id / zone_id | TEXT | |
+| date | TEXT | `YYYY-MM-DD`（UTC） |
+| requests / cached_requests | INTEGER | 缓存命中率由二者推导 |
+| bytes / cached_bytes | INTEGER | 带宽及节省量 |
+| threats | INTEGER | 当日拦截计数 |
+| uniques | INTEGER | 独立访客 |
+| is_final | INTEGER | 定型标记（见 §4.2） |
+| fetched_at | INTEGER | |
+
+**analytics_hourly** — 结构同 daily，时间列为 `hour_bucket TEXT`（`YYYY-MM-DDTHH`，UTC），复合 PK `(binding_id, zone_id, hour_bucket)`；清理任务滚动删除 7 天前数据。
+
+**sync_state** — 调度器的依据（比扫业务行 fetched_at 准确，且覆盖空列表场景），复合 PK `(binding_id, resource, scope)`
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| binding_id | TEXT | |
+| resource | TEXT | `zones` \| `dns_records` \| `analytics_tail` \| … |
+| scope | TEXT | 细分范围（如 zone id），无则 `*` |
+| last_synced_at | INTEGER | 成功同步时间，SyncScheduler 据此算 TTL 到期 |
+| last_status | TEXT | `ok` \| `error` |
+| fail_count | INTEGER | 连续失败次数（重试策略输入） |
+| last_error | TEXT | 最近错误摘要（degraded UI 展示） |
+
+**query_cache** — TanStack Query persister 后端，单行 blob：`id INTEGER PK CHECK(id=1)`、`payload TEXT`、`updated_at INTEGER`。
+
+**清理策略**：解绑账户 = 各表按 `binding_id` 级联清理（含 SecureStore 凭证）；hourly 滚动 7 天；daily 永久保留。
 
 ### 4.4 多账户聚合
 
@@ -145,7 +200,7 @@ syncPolicy: {
 }
 ```
 
-- 不设 per-job 定时器：**全局 tick（前台 60s）扫描 SQLite `fetched_at`**，过期的（binding × 资源）组合生成 job 入队
+- 不设 per-job 定时器：**全局 tick（前台 60s）扫描 `sync_state` 表**（结构见 §4.3），`now - last_synced_at > ttl` 的（binding × 资源 × scope）组合生成 job 入队
 - 无状态可恢复：该拉什么永远从"数据多旧"推导；重启不丢调度
 - 规模线性：100 账号也只是扫表批量入队；到期任务加 jitter 打散避免齐发；可见屏幕 job 高优先级插队
 - **API 配额治理**（CF 限流按账户/token，约 1200 次/5min）：
