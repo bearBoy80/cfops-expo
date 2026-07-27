@@ -1,49 +1,38 @@
 import '../global.css';
 
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { useEffect } from 'react';
+import { Stack } from 'expo-router';
 import { AuthGateProvider, useAuth } from '../src/auth/AuthGate';
+import { routeGuards } from '../src/auth/routeGuards';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 
-function Gate({ children }: { children: React.ReactNode }) {
+function AuthenticatedStack() {
   const { status } = useAuth();
-  const segments = useSegments();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (status === 'loading') {
-      return;
-    }
-
-    const rootSegment = segments[0] as string | undefined;
-
-    if (status === 'no-account' && rootSegment !== 'onboarding') {
-      router.replace('/onboarding');
-    } else if (status === 'locked' && rootSegment !== 'unlock') {
-      router.replace('/unlock');
-    } else if (
-      status === 'unlocked' &&
-      (rootSegment === 'unlock' || rootSegment === 'onboarding')
-    ) {
-      router.replace('/(tabs)/(home)');
-    }
-  }, [router, segments, status]);
-
-  return <>{children}</>;
-}
-
-function ThemedStack() {
   const { colors } = useTheme();
+  const guards = routeGuards(status);
 
   return (
-    <Gate>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.bg },
-        }}
-      />
-    </Gate>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.bg },
+      }}
+    >
+      <Stack.Protected guard={guards.loading}>
+        <Stack.Screen name="loading" />
+      </Stack.Protected>
+      <Stack.Protected guard={guards.onboarding}>
+        <Stack.Screen name="onboarding/index" />
+      </Stack.Protected>
+      <Stack.Protected guard={guards.unlock}>
+        <Stack.Screen name="unlock" />
+      </Stack.Protected>
+      <Stack.Protected guard={guards.error}>
+        <Stack.Screen name="account-error" />
+      </Stack.Protected>
+      <Stack.Protected guard={guards.tabs}>
+        <Stack.Screen name="(tabs)" />
+      </Stack.Protected>
+    </Stack>
   );
 }
 
@@ -51,7 +40,7 @@ export default function RootLayout() {
   return (
     <ThemeProvider>
       <AuthGateProvider>
-        <ThemedStack />
+        <AuthenticatedStack />
       </AuthGateProvider>
     </ThemeProvider>
   );

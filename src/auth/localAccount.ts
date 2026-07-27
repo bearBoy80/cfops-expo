@@ -10,6 +10,22 @@ import {
 const STORAGE_KEY = 'local-account-v1';
 const SCRYPT_PARAMS = { N: 2 ** 14, r: 8, p: 1, dkLen: 32 };
 
+export type LocalAccountStorageErrorCode = 'corrupt' | 'unavailable';
+
+export class LocalAccountStorageError extends Error {
+  readonly code: LocalAccountStorageErrorCode;
+
+  constructor(code: LocalAccountStorageErrorCode) {
+    super(
+      code === 'corrupt'
+        ? 'The local account data is invalid.'
+        : 'The local account storage is unavailable.',
+    );
+    this.name = 'LocalAccountStorageError';
+    this.code = code;
+  }
+}
+
 export interface LocalAccount {
   name: string;
   saltHex: string;
@@ -24,9 +40,51 @@ function hashPassword(password: string, saltHex: string): string {
   );
 }
 
+function isHex(value: unknown, length: number): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length === length &&
+    /^[0-9a-f]+$/i.test(value)
+  );
+}
+
+function parseAccount(stored: string): LocalAccount {
+  let value: unknown;
+  try {
+    value = JSON.parse(stored);
+  } catch {
+    throw new LocalAccountStorageError('corrupt');
+  }
+
+  if (!value || typeof value !== 'object') {
+    throw new LocalAccountStorageError('corrupt');
+  }
+
+  const candidate = value as Partial<LocalAccount>;
+  if (
+    typeof candidate.name !== 'string' ||
+    candidate.name.trim().length === 0 ||
+    !isHex(candidate.saltHex, 32) ||
+    !isHex(candidate.hashHex, 64) ||
+    typeof candidate.biometricsEnabled !== 'boolean' ||
+    typeof candidate.createdAt !== 'number' ||
+    !Number.isFinite(candidate.createdAt)
+  ) {
+    throw new LocalAccountStorageError('corrupt');
+  }
+
+  return candidate as LocalAccount;
+}
+
 export async function getAccount(): Promise<LocalAccount | null> {
-  const stored = await SecureStore.getItemAsync(STORAGE_KEY);
-  return stored ? (JSON.parse(stored) as LocalAccount) : null;
+  let stored: string | null;
+  try {
+    stored = await SecureStore.getItemAsync(STORAGE_KEY);
+  } catch {
+    throw new LocalAccountStorageError('unavailable');
+  }
+
+  return stored ? parseAccount(stored) : null;
 }
 
 export async function createAccount(
@@ -63,4 +121,12 @@ export async function setBiometricsEnabled(enabled: boolean): Promise<void> {
     STORAGE_KEY,
     JSON.stringify({ ...account, biometricsEnabled: enabled }),
   );
+}
+
+export async function deleteAccount(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(STORAGE_KEY);
+  } catch {
+    throw new LocalAccountStorageError('unavailable');
+  }
 }

@@ -12,7 +12,9 @@
 
 **P1 计划路线图**：本计划是 4 份中的第 1 份（地基 → 绑定与数据层 → 同步引擎 → 屏幕接真）。后三份在前一份完成后编写。
 
-> **执行记录（2026-07-26）：** 本轮按用户要求以 iOS 为运行时验收平台；Android 配置与跨平台代码保留，但 Android 模拟器验收延后。SDK spike 在 Metro 打包阶段发现 `cloudflare` 导出名冲突，因此已采用 spec §11 的“SDK 类型 + 自写 fetch 层”兜底方案。
+> **执行记录（2026-07-26）：** 本轮按用户要求以 iOS 为运行时验收平台；Android 配置与跨平台代码保留，但 Android 模拟器验收延后。SDK spike 在 Metro 打包阶段发现 `cloudflare` 导出名冲突，因此已采用 spec §11 的“SDK 类型 + 自写 fetch 层”兜底方案。隔离的 `p-queue` + `mitt` 探针已在 iOS Hermes 运行时输出 `PQUEUE-SPIKE PASS order=1,2 total=3`，临时代码随后删除。
+>
+> **审查加固：** 根导航改用 `Stack.Protected`，未解锁时不会挂载 Tab；App 离开前台立即重新上锁；本地账号读取增加运行时结构校验、错误态与显式重置恢复；iOS 原生配置加入 Face ID 权限说明。
 
 ## Global Constraints
 

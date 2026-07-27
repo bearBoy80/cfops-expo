@@ -1,7 +1,7 @@
 import { Pressable, Text, View } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
-import { accent, label, tint } from '../../theme/tokens';
+import { accent, foreground, label, tint } from '../../theme/tokens';
 
 interface Props {
   Icon: LucideIcon;
@@ -22,7 +22,7 @@ export function EmptyState({ Icon, title, subtitle, actionLabel, onAction }: Pro
       <Text style={{ fontSize: 13, textAlign: 'center', lineHeight: 18, color: label(mode, 0.5) }}>{subtitle}</Text>
       {actionLabel ? (
         <Pressable onPress={onAction} style={({ pressed }) => ({ marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999, backgroundColor: accent.orange, opacity: pressed ? 0.7 : 1 })}>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>{actionLabel}</Text>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: foreground.onAccent }}>{actionLabel}</Text>
         </Pressable>
       ) : null}
     </View>

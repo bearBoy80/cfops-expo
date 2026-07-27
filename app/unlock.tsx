@@ -17,7 +17,7 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { accent, label, palettes, tint } from '../src/theme/tokens';
 
 export default function Unlock() {
-  const { unlock } = useAuth();
+  const { reportAccountError, unlock } = useAuth();
   const { mode, colors } = useTheme();
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
@@ -44,16 +44,22 @@ export default function Unlock() {
   useEffect(() => {
     let active = true;
 
-    void getAccount().then((account) => {
-      if (!active || !account) {
-        return;
-      }
-      setName(account.name);
-      setBiometricsEnabled(account.biometricsEnabled);
-      if (account.biometricsEnabled) {
-        void tryBiometrics();
-      }
-    });
+    void getAccount()
+      .then((account) => {
+        if (!active || !account) {
+          return;
+        }
+        setName(account.name);
+        setBiometricsEnabled(account.biometricsEnabled);
+        if (account.biometricsEnabled) {
+          void tryBiometrics();
+        }
+      })
+      .catch(() => {
+        if (active) {
+          reportAccountError();
+        }
+      });
 
     return () => {
       active = false;
@@ -61,13 +67,16 @@ export default function Unlock() {
   }, []);
 
   const submit = async () => {
-    if (await verifyPassword(password)) {
-      setError(null);
-      unlock();
-      return;
+    try {
+      if (await verifyPassword(password)) {
+        setError(null);
+        unlock();
+        return;
+      }
+      setError('Incorrect password.');
+    } catch {
+      reportAccountError();
     }
-
-    setError('Incorrect password.');
   };
 
   return (

@@ -16,6 +16,7 @@ export const palettes: Record<Mode, Palette> = {
 };
 
 export const accent = { orange: '#f6821f', green: '#30d158', red: '#ff453a', yellow: '#ffd60a', blue: '#0a84ff', purple: '#bf5af2', gray: '#8e8e93' } as const;
+export const foreground = { onAccent: '#ffffff' } as const;
 
 export const label = (mode: Mode, alpha: number) => `rgba(${palettes[mode].labelRgb},${alpha})`;
 export const hairline = (mode: Mode, alpha: number) => `rgba(${palettes[mode].hairlineRgb},${alpha})`;
