@@ -1,6 +1,7 @@
 module.exports = {
   preset: 'jest-expo',
   roots: ['<rootDir>/src', '<rootDir>/app'],
+  setupFiles: ['<rootDir>/jest.setup.js'],
   transformIgnorePatterns: [
     // Ignore everything in node_modules EXCEPT these packages (we want to transform them)
     'node_modules/(?!((jest-)?react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry|@noble|native-base|lucide|react-native-svg))',
