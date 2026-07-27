@@ -708,6 +708,164 @@ test('starts successful biometric authentication only after a user tap', async (
   );
 });
 
+test('reports unavailable biometric hardware without opening the native prompt', async () => {
+  await createAccount('JT', 'hunter2secret', true);
+  renderWithProviders(<Unlock />);
+
+  fireEvent.press(
+    await screen.findByRole('button', {
+      name: 'Use Face ID / fingerprint',
+    }),
+  );
+
+  const alert = await screen.findByRole('alert');
+  expect(alert.props.children).toBe(
+    'Biometric authentication is not available on this device. Use your password.',
+  );
+  expect(LocalAuthentication.isEnrolledAsync).not.toHaveBeenCalled();
+  expect(LocalAuthentication.authenticateAsync).not.toHaveBeenCalled();
+  expect(screen.getByTestId('password').props.editable).toBe(true);
+  expect(screen.getByRole('button', { name: 'Unlock' })).toBeEnabled();
+});
+
+test('reports missing biometric enrollment without opening the native prompt', async () => {
+  jest.mocked(LocalAuthentication.hasHardwareAsync).mockResolvedValue(true);
+  await createAccount('JT', 'hunter2secret', true);
+  renderWithProviders(<Unlock />);
+
+  fireEvent.press(
+    await screen.findByRole('button', {
+      name: 'Use Face ID / fingerprint',
+    }),
+  );
+
+  const alert = await screen.findByRole('alert');
+  expect(alert.props.children).toBe(
+    'Set up Face ID or fingerprint in device settings, then try again.',
+  );
+  expect(LocalAuthentication.authenticateAsync).not.toHaveBeenCalled();
+  expect(screen.getByTestId('password').props.editable).toBe(true);
+  expect(screen.getByRole('button', { name: 'Unlock' })).toBeEnabled();
+});
+
+test.each([
+  [
+    'not_available',
+    'Biometric authentication is unavailable. Use your password.',
+  ],
+  [
+    'authentication_failed',
+    'Face ID or fingerprint was not recognized. Try again or use your password.',
+  ],
+] as const)('reports the %s native biometric result', async (error, message) => {
+  jest.mocked(LocalAuthentication.hasHardwareAsync).mockResolvedValue(true);
+  jest.mocked(LocalAuthentication.isEnrolledAsync).mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.authenticateAsync)
+    .mockResolvedValue({ success: false, error });
+  await createAccount('JT', 'hunter2secret', true);
+  renderWithProviders(<Unlock />);
+
+  fireEvent.press(
+    await screen.findByRole('button', {
+      name: 'Use Face ID / fingerprint',
+    }),
+  );
+
+  const alert = await screen.findByRole('alert');
+  expect(alert.props.children).toBe(message);
+  expect(screen.getByTestId('password').props.editable).toBe(true);
+  expect(screen.getByRole('button', { name: 'Unlock' })).toBeEnabled();
+});
+
+test('reports a rejected native biometric call and keeps password unlock usable', async () => {
+  jest.mocked(LocalAuthentication.hasHardwareAsync).mockResolvedValue(true);
+  jest.mocked(LocalAuthentication.isEnrolledAsync).mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.authenticateAsync)
+    .mockRejectedValue(new Error('native prompt failed'));
+  await createAccount('JT', 'hunter2secret', true);
+  renderWithProviders(<Unlock />);
+
+  fireEvent.press(
+    await screen.findByRole('button', {
+      name: 'Use Face ID / fingerprint',
+    }),
+  );
+
+  const alert = await screen.findByRole('alert');
+  expect(alert.props.children).toBe(
+    'Biometric authentication is unavailable. Use your password.',
+  );
+  expect(screen.getByTestId('password').props.editable).toBe(true);
+  expect(screen.getByRole('button', { name: 'Unlock' })).toBeEnabled();
+});
+
+test.each(
+  ['user_cancel', 'app_cancel', 'system_cancel', 'user_fallback'] as const,
+)(
+  'keeps %s biometric cancellation silent and restores the action',
+  async (error) => {
+    jest.mocked(LocalAuthentication.hasHardwareAsync).mockResolvedValue(true);
+    jest.mocked(LocalAuthentication.isEnrolledAsync).mockResolvedValue(true);
+    jest
+      .mocked(LocalAuthentication.authenticateAsync)
+      .mockResolvedValue({ success: false, error });
+    await createAccount('JT', 'hunter2secret', true);
+    renderWithProviders(<Unlock />);
+
+    fireEvent.press(
+      await screen.findByRole('button', {
+        name: 'Use Face ID / fingerprint',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Use Face ID / fingerprint' }),
+      ).toBeEnabled(),
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByTestId('password').props.editable).toBe(true);
+    expect(screen.getByRole('button', { name: 'Unlock' })).toBeEnabled();
+  },
+);
+
+test('clears an old password error when biometric authentication starts', async () => {
+  let resolvePrompt:
+    | ((value: { success: false; error: 'user_cancel' }) => void)
+    | undefined;
+  jest.mocked(LocalAuthentication.hasHardwareAsync).mockResolvedValue(true);
+  jest.mocked(LocalAuthentication.isEnrolledAsync).mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.authenticateAsync)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrompt = resolve;
+        }),
+    );
+  await createAccount('JT', 'hunter2secret', true);
+  renderWithProviders(<Unlock />);
+
+  fireEvent.changeText(screen.getByTestId('password'), 'wrong');
+  fireEvent.press(screen.getByRole('button', { name: 'Unlock' }));
+  expect(await screen.findByText('Incorrect password.')).toBeTruthy();
+
+  fireEvent.press(
+    screen.getByRole('button', { name: 'Use Face ID / fingerprint' }),
+  );
+
+  await waitFor(() =>
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1),
+  );
+  expect(screen.queryByRole('alert')).toBeNull();
+
+  await act(async () => {
+    resolvePrompt?.({ success: false, error: 'user_cancel' });
+  });
+});
+
 test('ignores a pending biometric success after the unlock screen unmounts', async () => {
   let resolvePrompt: ((value: { success: true }) => void) | undefined;
   jest

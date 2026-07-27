@@ -22,6 +22,27 @@ import { accent, label, palettes, tint } from '../src/theme/tokens';
 
 type AuthMode = 'password' | 'biometric' | null;
 
+const isBiometricCancellation = (error: unknown) => {
+  const code =
+    typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : typeof error === 'object' &&
+            error !== null &&
+            'code' in error &&
+            typeof error.code === 'string'
+          ? error.code
+          : undefined;
+
+  return (
+    code === 'user_cancel' ||
+    code === 'app_cancel' ||
+    code === 'system_cancel' ||
+    code === 'user_fallback'
+  );
+};
+
 export default function Unlock() {
   const { reportAccountError, unlock } = useAuth();
   const { mode, colors } = useTheme();
@@ -44,6 +65,7 @@ export default function Unlock() {
 
     authModeRef.current = 'biometric';
     setAuthMode('biometric');
+    setError(null);
 
     let flight: Promise<void>;
     flight = Promise.resolve().then(async () => {
@@ -54,13 +76,29 @@ export default function Unlock() {
 
         const hasHardware =
           await LocalAuthentication.hasHardwareAsync();
-        if (!hasHardware || !isForeground.current) {
+        if (!isForeground.current) {
+          return;
+        }
+        if (!hasHardware) {
+          if (isMounted.current) {
+            setError(
+              'Biometric authentication is not available on this device. Use your password.',
+            );
+          }
           return;
         }
 
         const isEnrolled =
           await LocalAuthentication.isEnrolledAsync();
-        if (!isEnrolled || !isForeground.current) {
+        if (!isForeground.current) {
+          return;
+        }
+        if (!isEnrolled) {
+          if (isMounted.current) {
+            setError(
+              'Set up Face ID or fingerprint in device settings, then try again.',
+            );
+          }
           return;
         }
 
@@ -77,9 +115,28 @@ export default function Unlock() {
           isMounted.current
         ) {
           unlock();
+          return;
         }
-      } catch {
-        // Native biometric failures leave password and biometric retry available.
+        if (
+          !result.success &&
+          isForeground.current &&
+          isMounted.current &&
+          !isBiometricCancellation(result.error)
+        ) {
+          setError(
+            result.error === 'authentication_failed'
+              ? 'Face ID or fingerprint was not recognized. Try again or use your password.'
+              : 'Biometric authentication is unavailable. Use your password.',
+          );
+        }
+      } catch (error) {
+        if (
+          isForeground.current &&
+          isMounted.current &&
+          !isBiometricCancellation(error)
+        ) {
+          setError('Biometric authentication is unavailable. Use your password.');
+        }
       } finally {
         if (biometricFlight.current === flight) {
           biometricFlight.current = null;
