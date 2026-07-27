@@ -39,7 +39,7 @@ First launch follows the four-step Figma onboarding flow. After setup,
 every cold start and foreground return requires password or biometric unlock
 before the five-tab shell mounts.
 
-Local passwords are scrypt-hashed and stored through `expo-secure-store`.
+Local passwords use a salted v2 SHA-256 verifier stored through `expo-secure-store`.
 Never place passwords, Cloudflare credentials, or API tokens in source,
 AsyncStorage, SQLite, fixtures, or logs.
 

@@ -570,12 +570,19 @@ test('rejects an empty unlock password without reading storage again', async () 
   expect(SecureStore.getItemAsync).not.toHaveBeenCalled();
 });
 
-test('shows a single busy password attempt and prevents duplicate submission', async () => {
+test('renders the busy password UI before reading SecureStore', async () => {
   await createAccount('JT', 'hunter2secret', false);
   renderWithProviders(<Unlock />);
   await screen.findByText('Welcome back, JT');
   jest.mocked(SecureStore.getItemAsync).mockClear();
 
+  let releaseFrame: (() => void) | undefined;
+  const animationFrameSpy = jest
+    .spyOn(globalThis, 'requestAnimationFrame')
+    .mockImplementation((callback) => {
+      releaseFrame = () => callback(0);
+      return 1;
+    });
   let resolveRead: ((value: string | null) => void) | undefined;
   jest.mocked(SecureStore.getItemAsync).mockImplementationOnce(
     () =>
@@ -586,20 +593,34 @@ test('shows a single busy password attempt and prevents duplicate submission', a
   fireEvent.changeText(screen.getByTestId('password'), 'hunter2secret');
   fireEvent.press(screen.getByRole('button', { name: 'Unlock' }));
 
-  const busyButton = await screen.findByRole('button', {
-    name: 'Unlocking…',
-  });
-  expect(busyButton).toBeDisabled();
-  expect(screen.getByTestId('password').props.editable).toBe(false);
-  fireEvent.press(busyButton);
-  expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1);
+  try {
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const busyButton = screen.getByRole('button', {
+      name: 'Unlocking…',
+    });
+    expect(busyButton).toBeDisabled();
+    expect(screen.getByTestId('password').props.editable).toBe(false);
+    fireEvent.press(busyButton);
+    expect(SecureStore.getItemAsync).not.toHaveBeenCalled();
 
-  await act(async () => {
-    resolveRead?.(mockStore.get('local-account-v2') ?? null);
-  });
-  await waitFor(() =>
-    expect(screen.getByTestId('auth-status').props.children).toBe('unlocked'),
-  );
+    act(() => {
+      releaseFrame?.();
+    });
+    await waitFor(() =>
+      expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1),
+    );
+
+    await act(async () => {
+      resolveRead?.(mockStore.get('local-account-v2') ?? null);
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('auth-status').props.children).toBe('unlocked'),
+    );
+  } finally {
+    animationFrameSpy.mockRestore();
+  }
 });
 
 test('keeps password and biometric authentication mutually exclusive', async () => {
@@ -649,6 +670,58 @@ test('keeps password and biometric authentication mutually exclusive', async () 
   await waitFor(() =>
     expect(screen.getByTestId('auth-status').props.children).toBe('unlocked'),
   );
+});
+
+test('does not start password verification while biometric authentication is pending', async () => {
+  jest
+    .mocked(LocalAuthentication.hasHardwareAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.isEnrolledAsync)
+    .mockResolvedValue(true);
+  let resolveBiometric:
+    | ((result: { success: false; error: 'user_cancel' }) => void)
+    | undefined;
+  jest.mocked(LocalAuthentication.authenticateAsync).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveBiometric = resolve;
+      }),
+  );
+  await createAccount('JT', 'hunter2secret', true);
+  renderWithProviders(<Unlock />);
+  await screen.findByText('Welcome back, JT');
+  jest.mocked(SecureStore.getItemAsync).mockClear();
+  fireEvent.changeText(screen.getByTestId('password'), 'hunter2secret');
+
+  fireEvent.press(
+    screen.getByRole('button', { name: 'Use Face ID / fingerprint' }),
+  );
+  await waitFor(() =>
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1),
+  );
+  const animationFrameSpy = jest
+    .spyOn(globalThis, 'requestAnimationFrame')
+    .mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+  const passwordButton = screen.getByRole('button', { name: 'Unlock' });
+
+  try {
+    fireEvent.press(passwordButton);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(SecureStore.getItemAsync).not.toHaveBeenCalled();
+    expect(passwordButton).toBeDisabled();
+  } finally {
+    animationFrameSpy.mockRestore();
+    await act(async () => {
+      resolveBiometric?.({ success: false, error: 'user_cancel' });
+    });
+  }
 });
 
 test('clears a password error when the user edits again', async () => {

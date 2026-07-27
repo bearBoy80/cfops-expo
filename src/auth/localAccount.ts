@@ -84,23 +84,6 @@ function parseAccount(stored: string): LocalAccount {
     throw new LocalAccountStorageError('corrupt');
   }
 
-  const hasOnboardingFields = [
-    'organization',
-    'email',
-    'onboardingComplete',
-    'onboardingStep',
-  ].some((field) => field in candidate);
-
-  if (!hasOnboardingFields) {
-    return {
-      ...candidate,
-      organization: '',
-      email: '',
-      onboardingComplete: true,
-      onboardingStep: 'done',
-    } as LocalAccount;
-  }
-
   if (
     typeof candidate.organization !== 'string' ||
     typeof candidate.email !== 'string' ||

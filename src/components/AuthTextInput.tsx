@@ -95,7 +95,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
-    fontSize: 16,
     minHeight: 52,
   },
   input: {

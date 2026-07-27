@@ -267,8 +267,8 @@ test('marks onboarding complete without changing the password hash', async () =>
   });
 });
 
-test('treats a legacy account without onboarding fields as complete', async () => {
-  await createAccount('Legacy User', 'hunter2secret', false);
+test('rejects an otherwise-valid v2 account without onboarding fields as corrupt', async () => {
+  await createAccount('JT', 'hunter2secret', false);
   const current = JSON.parse(mockStore.get('local-account-v2')!);
   delete current.organization;
   delete current.email;
@@ -276,11 +276,8 @@ test('treats a legacy account without onboarding fields as complete', async () =
   delete current.onboardingStep;
   mockStore.set('local-account-v2', JSON.stringify(current));
 
-  expect(await getAccount()).toMatchObject({
-    name: 'Legacy User',
-    organization: '',
-    email: '',
-    onboardingComplete: true,
-    onboardingStep: 'done',
+  await expect(getAccount()).rejects.toMatchObject({
+    code: 'corrupt',
+    name: 'LocalAccountStorageError',
   });
 });
