@@ -42,29 +42,32 @@ showing a misleading error.
 
 ## Performance and Security
 
-The pure-JavaScript `@noble/hashes` `scryptAsync` implementation still executes
-the expensive work on Hermes and takes about 5.7 seconds in the iOS Simulator.
-Replace it with `react-native-quick-crypto@1.1.6`, whose asynchronous scrypt
-implementation performs the OpenSSL work off the JavaScript thread.
+The password gate protects an account record already stored as one encrypted
+SecureStore item. Use Expo Crypto's native asynchronous SHA-256 digest for the
+current password verifier so normal unlocks remain compatible with Expo Go and
+complete without blocking Hermes. Hash a domain-separated string containing the
+verifier version, the existing 16-byte random hexadecimal salt, and the
+password. Continue to store only the resulting 32-byte hexadecimal digest.
 
-Retain `N = 2^14`, `r = 8`, `p = 1`, the existing hexadecimal salt, and a
-32-byte derived key. Set `maxmem` to 32 MiB. These values preserve existing
-account hashes, so no password or account migration is required. A fixed hash
-vector and an existing-account unlock must verify compatibility.
+Add a password-verifier version to new account records. Existing records without
+that version remain legacy scrypt records. On their first successful password
+verification, verify the old hash once, derive the current digest, and
+atomically rewrite the SecureStore account with the current version. Incorrect
+legacy passwords must not modify storage. This preserves existing accounts
+without keeping scrypt on the normal unlock path.
 
-This native dependency requires an Expo development build; Expo Go is no longer
-a supported runtime for the authentication path. A missing native module is a
-build/configuration error and must not silently fall back to the slow
-JavaScript implementation. Passwords remain component-local and must never be
-logged or newly persisted.
+Remove Quick Crypto, Nitro Modules, Expo development-client configuration, and
+their Jest shims. The legacy scrypt code remains only for migration and can be
+removed after the migration window. Passwords remain component-local and must
+never be logged or persisted.
 
 ## Verification
 
 Automated tests must cover empty passwords, visible busy state, duplicate-submit
 prevention, correct and incorrect passwords, manual-only biometrics, and hash
-compatibility. Run the focused Jest tests, the complete Jest suite, and
-`npx tsc --noEmit`. Build and launch the iOS development client, then manually
-verify focus, keyboard submission, pressed and busy feedback, password
-visibility, errors, Face ID, and successful navigation. Busy feedback should
-appear in the first rendered frame and a correct password should reach the tab
-application within one second on the iOS Simulator.
+versioning and migration. Run the focused Jest tests, the complete Jest suite,
+and `npx tsc --noEmit`. Launch with Expo Go, then manually verify focus, keyboard
+submission, pressed and busy feedback, password visibility, errors, biometrics,
+and successful navigation. Busy feedback should appear in the first rendered
+frame. Current-verifier unlocks should reach the tab application within 250 ms
+on the iOS Simulator; record the one-time legacy migration separately.

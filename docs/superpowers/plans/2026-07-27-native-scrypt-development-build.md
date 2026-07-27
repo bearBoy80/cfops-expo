@@ -1,5 +1,9 @@
 # Native Scrypt Development Build Implementation Plan
 
+> **Status:** Superseded by
+> `docs/superpowers/plans/2026-07-27-lightweight-password-verifier.md` after
+> native compilation proved disproportionate for this local SecureStore gate.
+
 > **For Codex:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task.
 
 **Goal:** Replace the Hermes-bound password derivation with native asynchronous scrypt while preserving every existing account hash.
