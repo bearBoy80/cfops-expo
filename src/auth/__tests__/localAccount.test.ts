@@ -10,6 +10,10 @@ jest.mock('expo-secure-store', () => ({
   }),
 }));
 
+jest.mock('expo-crypto', () => ({
+  getRandomBytes: jest.fn((length: number) => new Uint8Array(length).fill(0xab)),
+}));
+
 import {
   createAccount,
   getAccount,
@@ -33,6 +37,12 @@ test('stores only a salted password hash and verifies the password', async () =>
   expect(JSON.stringify(account)).not.toContain('hunter2secret');
   expect(await verifyPassword('hunter2secret')).toBe(true);
   expect(await verifyPassword('wrong')).toBe(false);
+});
+
+test('uses native random bytes for the password salt', async () => {
+  await createAccount('JT', 'hunter2secret', false);
+
+  expect((await getAccount())?.saltHex).toBe('ab'.repeat(16));
 });
 
 test('persists the biometric unlock preference', async () => {

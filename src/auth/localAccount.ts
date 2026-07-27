@@ -1,9 +1,9 @@
 import * as SecureStore from 'expo-secure-store';
+import { getRandomBytes } from 'expo-crypto';
 import { scrypt } from '@noble/hashes/scrypt.js';
 import {
   bytesToHex,
   hexToBytes,
-  randomBytes,
   utf8ToBytes,
 } from '@noble/hashes/utils.js';
 
@@ -34,7 +34,7 @@ export async function createAccount(
   password: string,
   biometricsEnabled: boolean,
 ): Promise<void> {
-  const saltHex = bytesToHex(randomBytes(16));
+  const saltHex = bytesToHex(getRandomBytes(16));
   const account: LocalAccount = {
     name,
     saltHex,
