@@ -12,6 +12,8 @@
 
 **P1 计划路线图**：本计划是 4 份中的第 1 份（地基 → 绑定与数据层 → 同步引擎 → 屏幕接真）。后三份在前一份完成后编写。
 
+> **执行记录（2026-07-26）：** 本轮按用户要求以 iOS 为运行时验收平台；Android 配置与跨平台代码保留，但 Android 模拟器验收延后。SDK spike 在 Metro 打包阶段发现 `cloudflare` 导出名冲突，因此已采用 spec §11 的“SDK 类型 + 自写 fetch 层”兜底方案。
+
 ## Global Constraints
 
 - 平台：iOS + Android 双端都必须可运行；涉及 UI 的任务手动验证需两端各跑一次
@@ -58,7 +60,7 @@ __tests__/ 与被测文件同级放 *.test.ts(x)
 - Consumes: 无（首个任务）
 - Produces: 可启动的 Expo 工程；`npm run ios` / `npm run android` 可用；后续所有任务的运行环境
 
-- [ ] **Step 1: 脚手架（仓库已有 .git 和 docs/，先建到临时目录再并入）**
+- [x] **Step 1: 脚手架（仓库已有 .git 和 docs/，先建到临时目录再并入）**
 
 ```bash
 cd /Users/jt.gui/workspace/expo/cloudflareOps
@@ -68,7 +70,7 @@ rm -rf .scaffold
 npm install
 ```
 
-- [ ] **Step 2: 拷入设计稿参考（来源：会话 scratchpad 的解压目录；若已丢失，重新解压 `~/Downloads/Cloudflare Client App Design.zip`）**
+- [x] **Step 2: 拷入设计稿参考（来源：会话 scratchpad 的解压目录；若已丢失，重新解压 `~/Downloads/Cloudflare Client App Design.zip`）**
 
 ```bash
 mkdir -p docs/design-reference
@@ -76,7 +78,7 @@ cp -R "/private/tmp/claude-501/-Users-jt-gui-workspace-expo-cloudflareOps/7ed419
 cp "/private/tmp/claude-501/-Users-jt-gui-workspace-expo-cloudflareOps/7ed419f7-29ea-4417-bd35-eee9bd97dd53/scratchpad/design/default_shadcn_theme.css" docs/design-reference/ 2>/dev/null || true
 ```
 
-- [ ] **Step 3: 清掉模板示例路由，建立最小 app/**
+- [x] **Step 3: 清掉模板示例路由，建立最小 app/**
 
 删除模板的 `app/(tabs)`、示例组件；建最小首页防止路由为空：
 
@@ -88,7 +90,7 @@ export default function Index() {
 }
 ```
 
-- [ ] **Step 4: 安装并配置 NativeWind v4**
+- [x] **Step 4: 安装并配置 NativeWind v4**
 
 ```bash
 npm i nativewind
@@ -128,16 +130,16 @@ module.exports = function (api) {
 
 在 `app/_layout.tsx` 顶部加 `import '../global.css';`，并给临时 `app/index.tsx` 加一个 `className="text-orange-500"` 验证类名生效。
 
-- [ ] **Step 5: app.json 基础配置**
+- [x] **Step 5: app.json 基础配置**
 
 `name: "cloudflareOps"`、`slug: "cloudflareops"`、`scheme: "cfops"`（OAuth 回调要用）、`ios.bundleIdentifier: "com.cloudflareops.app"`、`android.package: "com.cloudflareops.app"`（占位标识符，上架前按待定决策更换）、`userInterfaceStyle: "automatic"`。
 
-- [ ] **Step 6: 双端手动验证**
+- [x] **Step 6: iOS 手动验证（本轮范围；Android 延后）**
 
 Run: `npx expo start`，分别按 `i` 和 `a`。
 Expected: iOS 模拟器与 Android 模拟器都显示 "cloudflareOps"，文字为橙色（NativeWind 生效），Metro 无红屏。
 
-- [ ] **Step 7: 类型检查 + Commit**
+- [x] **Step 7: 类型检查 + Commit**
 
 ```bash
 npx tsc --noEmit
@@ -156,13 +158,13 @@ git add -A && git commit -m "feat: Expo 脚手架 + NativeWind + 设计稿参考
 - Consumes: Task 1 的运行环境
 - Produces: 结论记录在 commit message：SDK 可用 → 后续计划直接用 `cloudflare` 包；不可用 → 后续计划改走"SDK 类型 + 自写 fetch 层"兜底（spec §11）
 
-- [ ] **Step 1: 安装依赖**
+- [x] **Step 1: 安装依赖**
 
 ```bash
 npm i cloudflare p-queue mitt
 ```
 
-- [ ] **Step 2: 写 spike**
+- [x] **Step 2: 写 spike**
 
 ```ts
 // src/spike/cfSpike.ts
@@ -195,13 +197,13 @@ import { runCfSpike } from '../src/spike/cfSpike';
 useEffect(() => { runCfSpike().then(console.log).catch((e) => console.log('SPIKE-CRASH', e)); }, []);
 ```
 
-- [ ] **Step 3: 双端手动验证**
+- [x] **Step 3: Metro / Hermes 兼容性验证**
 
 Run: `npx expo start`，iOS 与 Android 各跑一次，看 Metro 日志。
 Expected PASS: 日志形如 `SPIKE AuthenticationError status=400 ...`（SDK 错误类 + HTTP 状态码，说明请求发出且响应被 SDK 解析）。
 Expected FAIL: `SPIKE-CRASH TypeError: ...`（缺运行时 API）→ 停下，向用户报告并按 spec §11 兜底方案调整后续计划。
 
-- [ ] **Step 4: 清理并记录结论**
+- [x] **Step 4: 清理并记录结论**
 
 删除 `src/spike/cfSpike.ts`，还原 `app/index.tsx`（依赖保留，后续计划使用）。
 
@@ -221,14 +223,14 @@ git add -A && git commit -m "chore: SDK Hermes spike 通过（iOS/Android 均返
 - Consumes: Task 1 工程
 - Produces: `npx jest` 可运行；后续所有任务的测试载体
 
-- [ ] **Step 1: 安装**
+- [x] **Step 1: 安装**
 
 ```bash
 npx expo install jest-expo jest @types/jest -- --save-dev
 npm i -D @testing-library/react-native
 ```
 
-- [ ] **Step 2: package.json 配置**
+- [x] **Step 2: package.json 配置**
 
 ```json
 "scripts": { "test": "jest" },
@@ -240,7 +242,7 @@ npm i -D @testing-library/react-native
 }
 ```
 
-- [ ] **Step 3: 冒烟测试（先跑，确认基建可用）**
+- [x] **Step 3: 冒烟测试（先跑，确认基建可用）**
 
 ```tsx
 // src/__tests__/smoke.test.tsx
@@ -256,7 +258,7 @@ test('renders text', () => {
 Run: `npx jest`
 Expected: 1 passed
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "test: jest-expo + RNTL 测试基建"
@@ -274,7 +276,7 @@ git add -A && git commit -m "test: jest-expo + RNTL 测试基建"
 - Consumes: 无
 - Produces: `useTheme(): { mode: 'dark' | 'light'; colors: Palette; setMode(m): void }`；`accent` 常量表；`label(mode, alpha): string`。所有组件从这里取色
 
-- [ ] **Step 1: 失败测试**
+- [x] **Step 1: 失败测试**
 
 ```tsx
 // src/theme/__tests__/theme.test.tsx
@@ -302,12 +304,12 @@ test('accent and label helper', () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `npx jest src/theme`
 Expected: FAIL（模块不存在）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 // src/theme/tokens.ts —— 对照 docs/design-reference/src/styles/theme.css 的 CSS 变量
@@ -347,7 +349,7 @@ export function useTheme(): ThemeValue {
 }
 ```
 
-- [ ] **Step 4: 跑测试通过 + Commit**
+- [x] **Step 4: 跑测试通过 + Commit**
 
 Run: `npx jest src/theme` → PASS
 
@@ -376,14 +378,14 @@ git add -A && git commit -m "feat: 主题 token 与 ThemeProvider（深/浅色�
 
 参考视觉：`docs/design-reference/src/app/components/shared.tsx`
 
-- [ ] **Step 1: 安装图标库**
+- [x] **Step 1: 安装图标库**
 
 ```bash
 npx expo install react-native-svg
 npm i lucide-react-native
 ```
 
-- [ ] **Step 2: 失败测试**
+- [x] **Step 2: 失败测试**
 
 ```tsx
 // src/components/ui/__tests__/ui.test.tsx
@@ -431,11 +433,11 @@ test('SectionLabel uppercases', () => {
 });
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `npx jest src/components` → FAIL（模块不存在）
 
-- [ ] **Step 4: 实现组件**
+- [x] **Step 4: 实现组件**
 
 ```tsx
 // src/components/ui/Card.tsx
@@ -585,7 +587,7 @@ export { AccountChip } from './AccountChip';
 export { EmptyState } from './EmptyState';
 ```
 
-- [ ] **Step 5: 跑测试通过 + Commit**
+- [x] **Step 5: 跑测试通过 + Commit**
 
 Run: `npx jest src/components` → 6 passed
 
@@ -610,14 +612,14 @@ git add -A && git commit -m "feat: 共享 UI 组件库（Card/ListRow/Pill/Metri
   - `setBiometricsEnabled(enabled: boolean): Promise<void>`
   - `interface LocalAccount { name: string; saltHex: string; hashHex: string; biometricsEnabled: boolean; createdAt: number }`
 
-- [ ] **Step 1: 安装**
+- [x] **Step 1: 安装**
 
 ```bash
 npx expo install expo-secure-store expo-local-authentication
 npm i @noble/hashes
 ```
 
-- [ ] **Step 2: 失败测试（内存 mock SecureStore）**
+- [x] **Step 2: 失败测试（内存 mock SecureStore）**
 
 ```ts
 // src/auth/__tests__/localAccount.test.ts
@@ -652,11 +654,11 @@ test('toggle biometrics persists', async () => {
 });
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `npx jest src/auth` → FAIL
 
-- [ ] **Step 4: 实现**
+- [x] **Step 4: 实现**
 
 ```ts
 // src/auth/localAccount.ts
@@ -696,7 +698,7 @@ export async function setBiometricsEnabled(enabled: boolean): Promise<void> {
 }
 ```
 
-- [ ] **Step 5: 跑测试通过 + Commit**
+- [x] **Step 5: 跑测试通过 + Commit**
 
 Run: `npx jest src/auth` → 3 passed
 
@@ -721,7 +723,7 @@ git add -A && git commit -m "feat: 本地账号模块（scrypt 哈希 + SecureSt
   - `useAuth(): { status: 'loading' | 'no-account' | 'locked' | 'unlocked'; unlock(): void; lock(): void; onAccountCreated(): void }`
   - 路由约定：`/unlock`、`/onboarding`、`/(tabs)/(home|zones|storage|compute|more)`——后续计划在各 tab 组内加子路由
 
-- [ ] **Step 1: 失败测试（状态机）**
+- [x] **Step 1: 失败测试（状态机）**
 
 ```tsx
 // src/auth/__tests__/AuthGate.test.tsx
@@ -756,11 +758,11 @@ test('existing account -> locked -> unlock -> unlocked -> lock', async () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `npx jest src/auth/__tests__/AuthGate` → FAIL
 
-- [ ] **Step 3: 实现 AuthGate**
+- [x] **Step 3: 实现 AuthGate**
 
 ```tsx
 // src/auth/AuthGate.tsx
@@ -792,11 +794,11 @@ export function useAuth(): AuthValue {
 }
 ```
 
-- [ ] **Step 4: 跑测试通过**
+- [x] **Step 4: 跑测试通过**
 
 Run: `npx jest src/auth` → PASS（连同 Task 6 的测试）
 
-- [ ] **Step 5: 根布局 + 门禁重定向**
+- [x] **Step 5: 根布局 + 门禁重定向**
 
 ```tsx
 // app/_layout.tsx
@@ -842,7 +844,7 @@ export default function RootLayout() {
 
 删除 `app/index.tsx`（`/` 由门禁重定向接管；expo-router 对不存在的 index 会显示 404，但门禁在首帧前重定向，双端手动验证确认无闪烁 404）。若出现 404 闪烁，则保留一个空 `app/index.tsx` 返回 `null`。
 
-- [ ] **Step 6: unlock / onboarding 占位（Task 8 替换）**
+- [x] **Step 6: unlock / onboarding 占位（Task 8 替换）**
 
 ```tsx
 // app/unlock.tsx（占位）
@@ -877,7 +879,7 @@ export default function Onboarding() {
 
 （占位文件允许临时硬编码橙色，Task 8 重写为 token。）
 
-- [ ] **Step 7: 5 Tab 骨架**
+- [x] **Step 7: 5 Tab 骨架**
 
 ```tsx
 // app/(tabs)/_layout.tsx
@@ -929,12 +931,12 @@ export default function Home() {
 
 其余四个：Zones/`Globe`、Storage/`Database`、Compute/`Zap`、More/`MoreHorizontal`。
 
-- [ ] **Step 8: 双端手动验证**
+- [x] **Step 8: iOS 手动验证（本轮范围；Android 延后）**
 
 Run: `npx expo start`，iOS 与 Android。
 Expected: 首启进 onboarding 占位 → 点击创建 → 进入 5 Tab；杀掉 App 重启 → 进入 unlock 占位 → 点击解锁 → 回到 Tab；切换 5 个 tab 均显示对应骨架屏。
 
-- [ ] **Step 9: 类型检查 + 全量测试 + Commit**
+- [x] **Step 9: 类型检查 + 全量测试 + Commit**
 
 ```bash
 npx tsc --noEmit && npx jest
@@ -954,7 +956,7 @@ git add -A && git commit -m "feat: AuthGate 门禁 + 5 Tab 路由骨架"
 - Consumes: `createAccount/verifyPassword/getAccount`（Task 6）、`useAuth`（Task 7）、theme（Task 4）
 - Produces: 可用的创建账号/解锁流程；`AuthTextInput({ placeholder, value, onChangeText, secureTextEntry?, testID? })`
 
-- [ ] **Step 1: 失败测试**
+- [x] **Step 1: 失败测试**
 
 ```tsx
 // src/auth/__tests__/screens.test.tsx
@@ -1005,11 +1007,11 @@ test('unlock shows error on wrong password', async () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `npx jest src/auth/__tests__/screens` → FAIL
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```tsx
 // src/components/AuthTextInput.tsx
@@ -1157,15 +1159,15 @@ export default function Unlock() {
 }
 ```
 
-- [ ] **Step 4: 跑测试通过**
+- [x] **Step 4: 跑测试通过**
 
 Run: `npx jest` → 全部 PASS
 
-- [ ] **Step 5: 双端手动验证**
+- [x] **Step 5: iOS 手动验证 + 生物识别自动化验证（本轮范围；Android 延后）**
 
 Expected: 删除 App 重装（清 SecureStore）→ onboarding 完整表单（校验生效）→ 创建后进 Tab；重启 → unlock 屏，错密码报错、正确密码进入；开了生物识别的设备自动弹 Face ID/指纹。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 npx tsc --noEmit && npx jest
@@ -1183,7 +1185,7 @@ git add -A && git commit -m "feat: onboarding 与 unlock 完整 UI（密码 + �
 - Consumes: 全部前序任务
 - Produces: 可交接的地基里程碑
 
-- [ ] **Step 1: README**
+- [x] **Step 1: README**
 
 ```markdown
 # cloudflareOps
@@ -1204,7 +1206,7 @@ Cloudflare multi-account mobile client (Expo, iOS + Android).
 - Design reference (Figma Make export): `docs/design-reference/`
 ```
 
-- [ ] **Step 2: 全量验证**
+- [x] **Step 2: 全量自动化验证 + iOS 冷启动验证**
 
 ```bash
 npx tsc --noEmit && npx jest
@@ -1212,7 +1214,7 @@ npx tsc --noEmit && npx jest
 
 Expected: 0 type errors，全部测试通过。双端各冷启动一次走完 onboarding→tabs、重启→unlock→tabs 两条链路。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "docs: README 与地基里程碑收尾"
