@@ -162,3 +162,46 @@ Never write the password.
 git add .superpowers/sdd/2026-07-27-lightweight-password-verifier/native-verification-report.md
 git commit -m "test: 记录轻量 unlock 性能验证"
 ```
+
+### Task 4: Make biometric failures visible
+
+**Files:**
+- Modify: `app/unlock.tsx`
+- Modify: `src/auth/__tests__/screens.test.tsx`
+
+**Step 1: Write failing interaction tests**
+
+Add focused tests proving an explicit biometric tap:
+
+- reports unavailable hardware without calling native authentication;
+- reports missing biometric enrollment;
+- reports `not_available` and `authentication_failed` native results;
+- reports a rejected native call;
+- keeps user/system cancellation silent and restores the enabled action.
+
+Every message must be an accessibility alert and leave password unlock usable.
+Verify RED against the existing silent-return behavior.
+
+**Step 2: Implement actionable feedback**
+
+Clear an old error when biometric authentication starts. Use:
+
+- `Biometric authentication is not available on this device. Use your password.`
+- `Set up Face ID or fingerprint in device settings, then try again.`
+- `Face ID or fingerprint was not recognized. Try again or use your password.`
+- `Biometric authentication is unavailable. Use your password.`
+
+Treat `user_cancel`, `app_cancel`, `system_cancel`, and `user_fallback` as
+intentional cancellation and do not show an error. Preserve foreground,
+single-flight, mutual-exclusion, and unmount guards.
+
+**Step 3: Verify and commit**
+
+```sh
+npm test -- --runInBand src/auth/__tests__/screens.test.tsx
+npm test -- --runInBand
+npx tsc --noEmit
+git diff --check
+git add app/unlock.tsx src/auth/__tests__/screens.test.tsx
+git commit -m "fix: 显示生物认证失败反馈"
+```

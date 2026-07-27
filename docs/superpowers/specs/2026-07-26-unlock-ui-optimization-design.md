@@ -37,8 +37,11 @@ the form.
 
 Biometric authentication no longer starts when the screen mounts. A user tap
 starts the existing hardware, enrollment, and native authentication checks.
-Cancellation or native failure leaves the password path available without
-showing a misleading error.
+User cancellation leaves the password path available without an error.
+Unavailable hardware, missing enrollment, a failed match, or a native failure
+must restore the action and show actionable inline feedback instead of silently
+returning. This is especially important on iOS Expo Go, where Face ID is not
+supported.
 
 ## Performance and Security
 
