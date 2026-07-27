@@ -8,6 +8,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -229,7 +230,8 @@ export default function Unlock() {
             </Text>
           ) : null}
 
-          <Pressable
+          <TouchableOpacity
+            activeOpacity={0.8}
             accessibilityLabel={
               authMode === 'password' ? 'Unlocking…' : 'Unlock'
             }
@@ -240,10 +242,9 @@ export default function Unlock() {
             }}
             disabled={authBusy}
             onPress={() => void submit()}
-            style={({ pressed }) => [
+            style={[
               styles.primaryButton,
               { backgroundColor: accent.orange },
-              pressed && !authBusy && styles.primaryButtonPressed,
               authBusy && styles.actionDisabled,
             ]}
           >
@@ -269,7 +270,7 @@ export default function Unlock() {
                 Unlock
               </Text>
             )}
-          </Pressable>
+          </TouchableOpacity>
         </View>
 
         {biometricsEnabled ? (
@@ -348,10 +349,7 @@ const styles = StyleSheet.create({
     gap: 9,
     justifyContent: 'center',
     minHeight: 52,
-  },
-  primaryButtonPressed: {
-    opacity: 0.84,
-    transform: [{ scale: 0.985 }],
+    width: '100%',
   },
   primaryButtonText: {
     fontSize: 16,

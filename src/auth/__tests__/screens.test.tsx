@@ -877,14 +877,20 @@ test('serializes double biometric triggers and restores the busy action after re
   expect(screen.getByTestId('auth-status').props.children).toBe('locked');
 });
 
-test('unlock presents its primary action as a full-width accent button', async () => {
+test('renders the unlock primary action as a static full-width native button', async () => {
   await createAccount('JT', 'hunter2secret', false);
   renderWithProviders(<Unlock />);
   await screen.findByText('Welcome back, JT');
 
-  expect(screen.getByRole('button', { name: 'Unlock' })).toHaveStyle({
+  const button = screen.UNSAFE_getByType(TouchableOpacity);
+
+  expect(button.props.accessibilityLabel).toBe('Unlock');
+  expect(StyleSheet.flatten(button.props.style)).toMatchObject({
     alignItems: 'center',
     backgroundColor: accent.orange,
+    flexDirection: 'row',
     minHeight: 52,
+    width: '100%',
   });
+  expect(button.props.activeOpacity).toBe(0.8);
 });
