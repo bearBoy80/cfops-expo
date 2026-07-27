@@ -8,7 +8,13 @@ import {
 } from '@testing-library/react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
-import { AppState, Text, type AppStateStatus } from 'react-native';
+import {
+  AppState,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  type AppStateStatus,
+} from 'react-native';
 import Onboarding from '../../../app/onboarding';
 import Unlock from '../../../app/unlock';
 import { AuthGateProvider, useAuth } from '../AuthGate';
@@ -177,6 +183,20 @@ test('runs the Figma onboarding flow and persists completion', async () => {
   });
 });
 
+test('renders the welcome primary action as a full-width horizontal button', async () => {
+  renderWithProviders(<Onboarding />);
+
+  await screen.findByRole('button', { name: 'Get Started' });
+  const button = screen.UNSAFE_getByType(TouchableOpacity);
+
+  expect(StyleSheet.flatten(button.props.style)).toMatchObject({
+    backgroundColor: accent.orange,
+    flexDirection: 'row',
+    width: '100%',
+  });
+  expect(button.props.activeOpacity).toBe(0.8);
+});
+
 test('validates organization, email, password length, and confirmation', async () => {
   renderWithProviders(<Onboarding />);
   await waitFor(() =>
@@ -255,6 +275,30 @@ test('centers the connection choices in the remaining step space', async () => {
   expect(screen.getByTestId('connection-choices')).toHaveStyle({
     flex: 1,
     justifyContent: 'center',
+  });
+});
+
+test('renders connection choices with static native touch styles', async () => {
+  await createOnboardingAccount(
+    { organization: 'Acme', name: 'JT', email: 'jt@acme.com' },
+    'hunter2secret',
+    false,
+  );
+
+  renderWithProviders(<Onboarding />);
+  await screen.findByText('Bind Cloudflare accounts');
+
+  const authorize = screen
+    .UNSAFE_getAllByType(TouchableOpacity)
+    .find(
+      (instance) =>
+        instance.props.accessibilityLabel === 'Authorize with Cloudflare',
+  );
+
+  expect(authorize).toBeDefined();
+  expect(StyleSheet.flatten(authorize!.props.style)).toMatchObject({
+    flexDirection: 'row',
+    width: '100%',
   });
 });
 

@@ -1,9 +1,9 @@
 import {
   ActivityIndicator,
-  Pressable,
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
   type KeyboardTypeOptions,
 } from 'react-native';
@@ -72,19 +72,19 @@ export function OnboardingPrimaryButton({
   const unavailable = disabled || busy;
 
   return (
-    <Pressable
+    <TouchableOpacity
+      activeOpacity={0.8}
       accessibilityLabel={buttonLabel}
       accessibilityRole="button"
       accessibilityState={{ busy, disabled: unavailable }}
       disabled={unavailable}
       onPress={onPress}
-      style={({ pressed }) => [
+      style={[
         styles.primaryButton,
         {
           backgroundColor: unavailable
             ? tint(accent.orange, '59')
             : accent.orange,
-          opacity: pressed ? 0.8 : 1,
         },
       ]}
     >
@@ -99,7 +99,7 @@ export function OnboardingPrimaryButton({
           size={18}
         />
       ) : null}
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 

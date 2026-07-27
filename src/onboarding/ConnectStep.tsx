@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { ArrowRight, Cloud, KeyRound } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { accent, hairline, label, tint } from '../theme/tokens';
@@ -137,18 +144,18 @@ function ConnectionChoice({
   const { mode, colors } = useTheme();
 
   return (
-    <Pressable
+    <TouchableOpacity
+      activeOpacity={0.8}
       accessibilityLabel={choiceLabel}
       accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => [
+      style={[
         styles.connectionChoice,
         {
           backgroundColor: colors.surface,
           borderColor: emphasized
             ? tint(accent.orange, '66')
             : hairline(mode, 0.08),
-          opacity: pressed ? 0.8 : 1,
         },
       ]}
     >
@@ -177,7 +184,7 @@ function ConnectionChoice({
         color={emphasized ? accent.orange : label(mode, 0.4)}
         size={18}
       />
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
@@ -197,6 +204,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     padding: 16,
+    width: '100%',
   },
   connectionChoices: {
     flex: 1,
