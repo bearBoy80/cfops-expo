@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   AppState,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -17,6 +19,8 @@ import { AuthTextInput } from '../src/components/AuthTextInput';
 import { useTheme } from '../src/theme/ThemeContext';
 import { accent, label, palettes, tint } from '../src/theme/tokens';
 
+type AuthMode = 'password' | 'biometric' | null;
+
 export default function Unlock() {
   const { reportAccountError, unlock } = useAuth();
   const { mode, colors } = useTheme();
@@ -24,24 +28,27 @@ export default function Unlock() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
-  const [biometricsBusy, setBiometricsBusy] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>(null);
+  const authModeRef = useRef<AuthMode>(null);
   const isForeground = useRef(AppState.currentState === 'active');
   const isMounted = useRef(true);
   const biometricFlight = useRef<Promise<void> | null>(null);
+  const passwordFlight = useRef<Promise<void> | null>(null);
+  const authBusy = authMode !== null;
 
   const tryBiometrics = () => {
-    if (biometricFlight.current) {
-      return biometricFlight.current;
+    if (biometricFlight.current || authModeRef.current !== null) {
+      return biometricFlight.current ?? Promise.resolve();
     }
+
+    authModeRef.current = 'biometric';
+    setAuthMode('biometric');
 
     let flight: Promise<void>;
     flight = Promise.resolve().then(async () => {
       try {
         if (!isForeground.current) {
           return;
-        }
-        if (isMounted.current) {
-          setBiometricsBusy(true);
         }
 
         const hasHardware =
@@ -71,9 +78,12 @@ export default function Unlock() {
       } finally {
         if (biometricFlight.current === flight) {
           biometricFlight.current = null;
-        }
-        if (isMounted.current) {
-          setBiometricsBusy(false);
+          if (authModeRef.current === 'biometric') {
+            authModeRef.current = null;
+            if (isMounted.current) {
+              setAuthMode(null);
+            }
+          }
         }
       }
     });
@@ -104,9 +114,6 @@ export default function Unlock() {
         }
         setName(account.name);
         setBiometricsEnabled(account.biometricsEnabled);
-        if (account.biometricsEnabled) {
-          void tryBiometrics();
-        }
       })
       .catch(() => {
         if (active) {
@@ -119,16 +126,54 @@ export default function Unlock() {
     };
   }, []);
 
-  const submit = async () => {
-    try {
-      if (await verifyPassword(password)) {
-        setError(null);
-        unlock();
-        return;
-      }
-      setError('Incorrect password.');
-    } catch {
-      reportAccountError();
+  const submit = () => {
+    if (passwordFlight.current || authModeRef.current !== null) {
+      return passwordFlight.current ?? Promise.resolve();
+    }
+    if (!password) {
+      setError('Enter your password.');
+      return Promise.resolve();
+    }
+
+    setError(null);
+    authModeRef.current = 'password';
+    setAuthMode('password');
+    Keyboard.dismiss();
+
+    let flight: Promise<void>;
+    flight = new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    })
+      .then(async () => {
+        if (await verifyPassword(password)) {
+          unlock();
+          return;
+        }
+        if (isMounted.current) {
+          setError('Incorrect password.');
+        }
+      })
+      .catch(() => reportAccountError())
+      .finally(() => {
+        if (passwordFlight.current === flight) {
+          passwordFlight.current = null;
+          if (authModeRef.current === 'password') {
+            authModeRef.current = null;
+            if (isMounted.current) {
+              setAuthMode(null);
+            }
+          }
+        }
+      });
+
+    passwordFlight.current = flight;
+    return flight;
+  };
+
+  const changePassword = (value: string) => {
+    setPassword(value);
+    if (error) {
+      setError(null);
     }
   };
 
@@ -156,9 +201,13 @@ export default function Unlock() {
 
         <View style={styles.form}>
           <AuthTextInput
-            onChangeText={setPassword}
+            disabled={authBusy}
+            onChangeText={changePassword}
+            onSubmitEditing={() => void submit()}
             placeholder="Password"
+            returnKeyType="go"
             secureTextEntry
+            showPasswordToggle
             testID="password"
             textContentType="password"
             value={password}
@@ -171,23 +220,45 @@ export default function Unlock() {
           ) : null}
 
           <Pressable
+            accessibilityLabel={
+              authMode === 'password' ? 'Unlocking…' : 'Unlock'
+            }
             accessibilityRole="button"
-            onPress={submit}
-            style={[
+            accessibilityState={{
+              busy: authMode === 'password',
+              disabled: authBusy,
+            }}
+            disabled={authBusy}
+            onPress={() => void submit()}
+            style={({ pressed }) => [
               styles.primaryButton,
-              {
-                backgroundColor: accent.orange,
-              },
+              { backgroundColor: accent.orange },
+              pressed && !authBusy && styles.primaryButtonPressed,
+              authBusy && styles.actionDisabled,
             ]}
           >
-            <Text
-              style={[
-                styles.primaryButtonText,
-                { color: palettes.dark.text },
-              ]}
-            >
-              Unlock
-            </Text>
+            {authMode === 'password' ? (
+              <>
+                <ActivityIndicator color={palettes.dark.text} size="small" />
+                <Text
+                  style={[
+                    styles.primaryButtonText,
+                    { color: palettes.dark.text },
+                  ]}
+                >
+                  Unlocking…
+                </Text>
+              </>
+            ) : (
+              <Text
+                style={[
+                  styles.primaryButtonText,
+                  { color: palettes.dark.text },
+                ]}
+              >
+                Unlock
+              </Text>
+            )}
           </Pressable>
         </View>
 
@@ -195,21 +266,21 @@ export default function Unlock() {
           <Pressable
             accessibilityRole="button"
             accessibilityState={{
-              busy: biometricsBusy,
-              disabled: biometricsBusy,
+              busy: authMode === 'biometric',
+              disabled: authBusy,
             }}
-            disabled={biometricsBusy}
-            onPress={tryBiometrics}
+            disabled={authBusy}
+            onPress={() => void tryBiometrics()}
             style={[
               styles.biometricButton,
-              biometricsBusy && styles.biometricButtonBusy,
+              authBusy && styles.actionDisabled,
             ]}
           >
             <ScanFace color={label(mode, 0.65)} size={19} />
             <Text
               style={[styles.biometricText, { color: label(mode, 0.65) }]}
             >
-              {biometricsBusy
+              {authMode === 'biometric'
                 ? 'Authenticating…'
                 : 'Use Face ID / fingerprint'}
             </Text>
@@ -221,6 +292,9 @@ export default function Unlock() {
 }
 
 const styles = StyleSheet.create({
+  actionDisabled: {
+    opacity: 0.68,
+  },
   biometricButton: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -229,17 +303,17 @@ const styles = StyleSheet.create({
     marginTop: 20,
     padding: 10,
   },
-  biometricButtonBusy: {
-    opacity: 0.55,
-  },
   biometricText: {
     fontSize: 14,
     fontWeight: '500',
   },
   content: {
+    alignSelf: 'center',
     flex: 1,
     justifyContent: 'center',
+    maxWidth: 440,
     paddingHorizontal: 24,
+    width: '100%',
   },
   error: {
     color: accent.red,
@@ -247,7 +321,7 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 12,
-    marginTop: 30,
+    marginTop: 26,
   },
   icon: {
     alignItems: 'center',
@@ -260,8 +334,14 @@ const styles = StyleSheet.create({
   primaryButton: {
     alignItems: 'center',
     borderRadius: 15,
+    flexDirection: 'row',
+    gap: 9,
     justifyContent: 'center',
     minHeight: 52,
+  },
+  primaryButtonPressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.985 }],
   },
   primaryButtonText: {
     fontSize: 16,

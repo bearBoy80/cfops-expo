@@ -61,6 +61,8 @@ jest.mock('lucide-react-native', () => ({
   Building2: () => null,
   Check: () => null,
   Cloud: () => null,
+  Eye: () => null,
+  EyeOff: () => null,
   KeyRound: () => null,
   Layers: () => null,
   LockKeyhole: () => null,
@@ -469,7 +471,125 @@ test('unlock opens the gate for the correct password', async () => {
   );
 });
 
-test('unlock opens the gate after successful biometric authentication', async () => {
+test('rejects an empty unlock password without reading storage again', async () => {
+  await createAccount('JT', 'hunter2secret', false);
+  renderWithProviders(<Unlock />);
+  await screen.findByText('Welcome back, JT');
+  jest.mocked(SecureStore.getItemAsync).mockClear();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Unlock' }));
+
+  expect(await screen.findByText('Enter your password.')).toBeTruthy();
+  expect(SecureStore.getItemAsync).not.toHaveBeenCalled();
+});
+
+test('shows a single busy password attempt and prevents duplicate submission', async () => {
+  await createAccount('JT', 'hunter2secret', false);
+  renderWithProviders(<Unlock />);
+  await screen.findByText('Welcome back, JT');
+  jest.mocked(SecureStore.getItemAsync).mockClear();
+
+  let resolveRead: ((value: string | null) => void) | undefined;
+  jest.mocked(SecureStore.getItemAsync).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+  );
+  fireEvent.changeText(screen.getByTestId('password'), 'hunter2secret');
+  fireEvent.press(screen.getByRole('button', { name: 'Unlock' }));
+
+  const busyButton = await screen.findByRole('button', {
+    name: 'Unlocking…',
+  });
+  expect(busyButton).toBeDisabled();
+  expect(screen.getByTestId('password').props.editable).toBe(false);
+  fireEvent.press(busyButton);
+  expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    resolveRead?.(mockStore.get('local-account-v1') ?? null);
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId('auth-status').props.children).toBe('unlocked'),
+  );
+});
+
+test('keeps password and biometric authentication mutually exclusive', async () => {
+  jest
+    .mocked(LocalAuthentication.hasHardwareAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.isEnrolledAsync)
+    .mockResolvedValue(true);
+  await createAccount('JT', 'hunter2secret', true);
+  renderWithProviders(<Unlock />);
+  await screen.findByText('Welcome back, JT');
+  jest.mocked(SecureStore.getItemAsync).mockClear();
+
+  let resolveRead: ((value: string | null) => void) | undefined;
+  jest.mocked(SecureStore.getItemAsync).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+  );
+  fireEvent.changeText(screen.getByTestId('password'), 'hunter2secret');
+  const passwordButton = screen.getByRole('button', { name: 'Unlock' });
+  const biometricButton = screen.getByRole('button', {
+    name: 'Use Face ID / fingerprint',
+  });
+
+  act(() => {
+    fireEvent.press(passwordButton);
+    fireEvent.press(biometricButton);
+  });
+
+  await waitFor(() =>
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1),
+  );
+  expect(LocalAuthentication.authenticateAsync).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole('button', { name: 'Unlocking…' }),
+  ).toBeDisabled();
+  expect(
+    screen.getByRole('button', { name: 'Use Face ID / fingerprint' }),
+  ).toBeDisabled();
+
+  await act(async () => {
+    resolveRead?.(mockStore.get('local-account-v1') ?? null);
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId('auth-status').props.children).toBe('unlocked'),
+  );
+});
+
+test('clears a password error when the user edits again', async () => {
+  await createAccount('JT', 'hunter2secret', false);
+  renderWithProviders(<Unlock />);
+  fireEvent.changeText(screen.getByTestId('password'), 'wrong');
+  fireEvent.press(screen.getByRole('button', { name: 'Unlock' }));
+  expect(await screen.findByText('Incorrect password.')).toBeTruthy();
+
+  fireEvent.changeText(screen.getByTestId('password'), 'wrong2');
+
+  expect(screen.queryByText('Incorrect password.')).toBeNull();
+});
+
+test('submits the password from the keyboard return action', async () => {
+  await createAccount('JT', 'hunter2secret', false);
+  renderWithProviders(<Unlock />);
+  await screen.findByText('Welcome back, JT');
+  fireEvent.changeText(screen.getByTestId('password'), 'hunter2secret');
+
+  fireEvent(screen.getByTestId('password'), 'submitEditing');
+
+  await waitFor(() =>
+    expect(screen.getByTestId('auth-status').props.children).toBe('unlocked'),
+  );
+});
+
+test('starts successful biometric authentication only after a user tap', async () => {
   jest
     .mocked(LocalAuthentication.hasHardwareAsync)
     .mockResolvedValue(true);
@@ -480,8 +600,14 @@ test('unlock opens the gate after successful biometric authentication', async ()
     .mocked(LocalAuthentication.authenticateAsync)
     .mockResolvedValue({ success: true });
   await createAccount('JT', 'hunter2secret', true);
-
   renderWithProviders(<Unlock />);
+
+  const biometricButton = await screen.findByRole('button', {
+    name: 'Use Face ID / fingerprint',
+  });
+  expect(LocalAuthentication.authenticateAsync).not.toHaveBeenCalled();
+
+  fireEvent.press(biometricButton);
 
   await waitFor(() =>
     expect(screen.getByTestId('auth-status').props.children).toBe('unlocked'),
@@ -512,6 +638,8 @@ test('keeps biometric rejection contained and leaves retry available', async () 
   const biometricButton = await screen.findByRole('button', {
     name: 'Use Face ID / fingerprint',
   });
+  fireEvent.press(biometricButton);
+
   await waitFor(() =>
     expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1),
   );
@@ -585,7 +713,6 @@ test('serializes double biometric triggers and restores the busy action after re
     .mockResolvedValue(true);
   jest
     .mocked(LocalAuthentication.authenticateAsync)
-    .mockResolvedValueOnce({ success: false, error: 'user_cancel' })
     .mockImplementationOnce(
       () =>
         new Promise((_, reject) => {
@@ -598,16 +725,12 @@ test('serializes double biometric triggers and restores the busy action after re
   const biometricButton = await screen.findByRole('button', {
     name: 'Use Face ID / fingerprint',
   });
+
+  fireEvent.press(biometricButton);
+  fireEvent.press(biometricButton);
+
   await waitFor(() =>
     expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1),
-  );
-  await waitFor(() => expect(biometricButton).toBeEnabled());
-
-  fireEvent.press(biometricButton);
-  fireEvent.press(biometricButton);
-
-  await waitFor(() =>
-    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(2),
   );
   expect(biometricButton).toBeDisabled();
   expect(biometricButton.props.accessibilityState).toMatchObject({
@@ -620,7 +743,7 @@ test('serializes double biometric triggers and restores the busy action after re
   });
 
   await waitFor(() => expect(biometricButton).toBeEnabled());
-  expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(2);
+  expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1);
   expect(screen.getByTestId('auth-status').props.children).toBe('locked');
 });
 
