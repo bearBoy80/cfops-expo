@@ -70,7 +70,11 @@ export default function Unlock() {
           fallbackLabel: 'Use password',
           promptMessage: 'Unlock cloudflareOps',
         });
-        if (result.success && isForeground.current) {
+        if (
+          result.success &&
+          isForeground.current &&
+          isMounted.current
+        ) {
           unlock();
         }
       } catch {
@@ -146,14 +150,20 @@ export default function Unlock() {
     })
       .then(async () => {
         if (await verifyPassword(password)) {
-          unlock();
+          if (isMounted.current) {
+            unlock();
+          }
           return;
         }
         if (isMounted.current) {
           setError('Incorrect password.');
         }
       })
-      .catch(() => reportAccountError())
+      .catch(() => {
+        if (isMounted.current) {
+          reportAccountError();
+        }
+      })
       .finally(() => {
         if (passwordFlight.current === flight) {
           passwordFlight.current = null;

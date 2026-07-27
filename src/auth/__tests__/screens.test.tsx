@@ -79,15 +79,19 @@ function AuthStatusProbe() {
   return <Text testID="auth-status">{status}</Text>;
 }
 
-function renderWithProviders(ui: React.ReactElement) {
-  return render(
+function withProviders(ui: React.ReactElement | null) {
+  return (
     <ThemeProvider>
       <AuthGateProvider>
         {ui}
         <AuthStatusProbe />
       </AuthGateProvider>
-    </ThemeProvider>,
+    </ThemeProvider>
   );
+}
+
+function renderWithProviders(ui: React.ReactElement) {
+  return render(withProviders(ui));
 }
 
 beforeEach(() => {
@@ -471,6 +475,60 @@ test('unlock opens the gate for the correct password', async () => {
   );
 });
 
+test('ignores a pending password success after the unlock screen unmounts', async () => {
+  await createAccount('JT', 'hunter2secret', false);
+  const view = renderWithProviders(<Unlock />);
+  await screen.findByText('Welcome back, JT');
+  jest.mocked(SecureStore.getItemAsync).mockClear();
+
+  let resolveRead: ((value: string | null) => void) | undefined;
+  jest.mocked(SecureStore.getItemAsync).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+  );
+  fireEvent.changeText(screen.getByTestId('password'), 'hunter2secret');
+  fireEvent.press(screen.getByRole('button', { name: 'Unlock' }));
+  await waitFor(() =>
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1),
+  );
+
+  view.rerender(withProviders(null));
+  await act(async () => {
+    resolveRead?.(mockStore.get('local-account-v1') ?? null);
+  });
+
+  expect(screen.getByTestId('auth-status').props.children).toBe('locked');
+});
+
+test('ignores a pending password rejection after the unlock screen unmounts', async () => {
+  await createAccount('JT', 'hunter2secret', false);
+  const view = renderWithProviders(<Unlock />);
+  await screen.findByText('Welcome back, JT');
+  jest.mocked(SecureStore.getItemAsync).mockClear();
+
+  let rejectRead: ((reason: Error) => void) | undefined;
+  jest.mocked(SecureStore.getItemAsync).mockImplementationOnce(
+    () =>
+      new Promise((_, reject) => {
+        rejectRead = reject;
+      }),
+  );
+  fireEvent.changeText(screen.getByTestId('password'), 'hunter2secret');
+  fireEvent.press(screen.getByRole('button', { name: 'Unlock' }));
+  await waitFor(() =>
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1),
+  );
+
+  view.rerender(withProviders(null));
+  await act(async () => {
+    rejectRead?.(new Error('keychain unavailable'));
+  });
+
+  expect(screen.getByTestId('auth-status').props.children).toBe('locked');
+});
+
 test('rejects an empty unlock password without reading storage again', async () => {
   await createAccount('JT', 'hunter2secret', false);
   renderWithProviders(<Unlock />);
@@ -619,6 +677,78 @@ test('starts successful biometric authentication only after a user tap', async (
       promptMessage: 'Unlock cloudflareOps',
     }),
   );
+});
+
+test('ignores a pending biometric success after the unlock screen unmounts', async () => {
+  let resolvePrompt: ((value: { success: true }) => void) | undefined;
+  jest
+    .mocked(LocalAuthentication.hasHardwareAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.isEnrolledAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.authenticateAsync)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrompt = resolve;
+        }),
+    );
+  await createAccount('JT', 'hunter2secret', true);
+  const view = renderWithProviders(<Unlock />);
+
+  fireEvent.press(
+    await screen.findByRole('button', {
+      name: 'Use Face ID / fingerprint',
+    }),
+  );
+  await waitFor(() =>
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1),
+  );
+
+  view.rerender(withProviders(null));
+  await act(async () => {
+    resolvePrompt?.({ success: true });
+  });
+
+  expect(screen.getByTestId('auth-status').props.children).toBe('locked');
+});
+
+test('ignores a pending biometric rejection after the unlock screen unmounts', async () => {
+  let rejectPrompt: ((reason: Error) => void) | undefined;
+  jest
+    .mocked(LocalAuthentication.hasHardwareAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.isEnrolledAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.authenticateAsync)
+    .mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectPrompt = reject;
+        }),
+    );
+  await createAccount('JT', 'hunter2secret', true);
+  const view = renderWithProviders(<Unlock />);
+
+  fireEvent.press(
+    await screen.findByRole('button', {
+      name: 'Use Face ID / fingerprint',
+    }),
+  );
+  await waitFor(() =>
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1),
+  );
+
+  view.rerender(withProviders(null));
+  await act(async () => {
+    rejectPrompt?.(new Error('native prompt failed'));
+  });
+
+  expect(screen.getByTestId('auth-status').props.children).toBe('locked');
 });
 
 test('keeps biometric rejection contained and leaves retry available', async () => {
