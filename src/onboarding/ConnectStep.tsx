@@ -58,7 +58,7 @@ export function ConnectStep({
         </Text>
       </View>
 
-      <View style={styles.connectionChoices}>
+      <View style={styles.connectionChoices} testID="connection-choices">
         <ConnectionChoice
           Icon={Cloud}
           accentColor={accent.orange}
@@ -90,7 +90,6 @@ export function ConnectStep({
         ) : null}
       </View>
 
-      <View style={styles.spacer} />
       <View style={styles.footer}>
         {error ? (
           <Text accessibilityRole="alert" style={styles.error}>
@@ -200,8 +199,9 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   connectionChoices: {
+    flex: 1,
     gap: 12,
-    marginTop: 28,
+    justifyContent: 'center',
   },
   connectionCopy: {
     flex: 1,
@@ -241,10 +241,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     padding: 12,
-  },
-  spacer: {
-    flex: 1,
-    minHeight: 24,
   },
   subtitle: {
     fontSize: 14,

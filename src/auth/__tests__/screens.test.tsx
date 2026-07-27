@@ -225,6 +225,22 @@ test('resumes a newly created onboarding account at the connect step', async () 
   ).toBeTruthy();
 });
 
+test('centers the connection choices in the remaining step space', async () => {
+  await createOnboardingAccount(
+    { organization: 'Acme', name: 'JT', email: 'jt@acme.com' },
+    'hunter2secret',
+    false,
+  );
+
+  renderWithProviders(<Onboarding />);
+  await screen.findByText('Bind Cloudflare accounts');
+
+  expect(screen.getByTestId('connection-choices')).toHaveStyle({
+    flex: 1,
+    justifyContent: 'center',
+  });
+});
+
 test('preserves create form values when returning from connect', async () => {
   renderWithProviders(<Onboarding />);
   fireEvent.press(await screen.findByText('Get Started'));
