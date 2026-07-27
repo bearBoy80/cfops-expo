@@ -831,6 +831,38 @@ test.each(
   },
 );
 
+test.each(
+  ['user_cancel', 'app_cancel', 'system_cancel', 'user_fallback'] as const,
+)(
+  'keeps a rejected %s coded biometric cancellation silent and restores the action',
+  async (code) => {
+    jest.mocked(LocalAuthentication.hasHardwareAsync).mockResolvedValue(true);
+    jest.mocked(LocalAuthentication.isEnrolledAsync).mockResolvedValue(true);
+    jest
+      .mocked(LocalAuthentication.authenticateAsync)
+      .mockRejectedValue(
+        Object.assign(new Error('native prompt cancelled'), { code }),
+      );
+    await createAccount('JT', 'hunter2secret', true);
+    renderWithProviders(<Unlock />);
+
+    fireEvent.press(
+      await screen.findByRole('button', {
+        name: 'Use Face ID / fingerprint',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Use Face ID / fingerprint' }),
+      ).toBeEnabled(),
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByTestId('password').props.editable).toBe(true);
+    expect(screen.getByRole('button', { name: 'Unlock' })).toBeEnabled();
+  },
+);
+
 test('clears an old password error when biometric authentication starts', async () => {
   let resolvePrompt:
     | ((value: { success: false; error: 'user_cancel' }) => void)

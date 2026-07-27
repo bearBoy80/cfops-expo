@@ -24,15 +24,15 @@ type AuthMode = 'password' | 'biometric' | null;
 
 const isBiometricCancellation = (error: unknown) => {
   const code =
-    typeof error === 'string'
-      ? error
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string'
+      ? error.code
       : error instanceof Error
         ? error.message
-        : typeof error === 'object' &&
-            error !== null &&
-            'code' in error &&
-            typeof error.code === 'string'
-          ? error.code
+        : typeof error === 'string'
+          ? error
           : undefined;
 
   return (
