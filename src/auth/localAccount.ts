@@ -1,14 +1,9 @@
 import * as SecureStore from 'expo-secure-store';
 import { getRandomBytes } from 'expo-crypto';
-import { scrypt } from '@noble/hashes/scrypt.js';
-import {
-  bytesToHex,
-  hexToBytes,
-  utf8ToBytes,
-} from '@noble/hashes/utils.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import { derivePasswordHash } from './passwordHash';
 
 const STORAGE_KEY = 'local-account-v1';
-const SCRYPT_PARAMS = { N: 2 ** 14, r: 8, p: 1, dkLen: 32 };
 
 export type LocalAccountStorageErrorCode = 'corrupt' | 'unavailable';
 
@@ -44,12 +39,6 @@ export interface LocalAccount {
   onboardingComplete: boolean;
   onboardingStep: PersistedOnboardingStep;
   createdAt: number;
-}
-
-function hashPassword(password: string, saltHex: string): string {
-  return bytesToHex(
-    scrypt(utf8ToBytes(password), hexToBytes(saltHex), SCRYPT_PARAMS),
-  );
 }
 
 function isHex(value: unknown, length: number): value is string {
@@ -147,12 +136,13 @@ export async function createAccount(
   biometricsEnabled: boolean,
 ): Promise<void> {
   const saltHex = bytesToHex(getRandomBytes(16));
+  const hashHex = await derivePasswordHash(password, saltHex);
   const account: LocalAccount = {
     name,
     organization: '',
     email: '',
     saltHex,
-    hashHex: hashPassword(password, saltHex),
+    hashHex,
     biometricsEnabled,
     onboardingComplete: true,
     onboardingStep: 'done',
@@ -168,15 +158,17 @@ export async function createOnboardingAccount(
   biometricsEnabled: boolean,
 ): Promise<void> {
   const saltHex = bytesToHex(getRandomBytes(16));
-  await saveAccount({
+  const hashHex = await derivePasswordHash(password, saltHex);
+  const account: LocalAccount = {
     ...profile,
     saltHex,
-    hashHex: hashPassword(password, saltHex),
+    hashHex,
     biometricsEnabled,
     onboardingComplete: false,
     onboardingStep: 'connect',
     createdAt: Date.now(),
-  });
+  };
+  await saveAccount(account);
 }
 
 export async function advanceOnboarding(
@@ -197,9 +189,12 @@ export async function completeOnboarding(): Promise<void> {
 
 export async function verifyPassword(password: string): Promise<boolean> {
   const account = await getAccount();
-  return account
-    ? hashPassword(password, account.saltHex) === account.hashHex
-    : false;
+  if (!account) {
+    return false;
+  }
+  return (
+    (await derivePasswordHash(password, account.saltHex)) === account.hashHex
+  );
 }
 
 export async function setBiometricsEnabled(enabled: boolean): Promise<void> {
