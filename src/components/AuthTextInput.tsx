@@ -1,66 +1,112 @@
 import { useState } from 'react';
 import {
+  Pressable,
   StyleSheet,
   TextInput,
+  View,
   type TextInputProps,
 } from 'react-native';
+import { Eye, EyeOff } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { accent, hairline, label } from '../theme/tokens';
 
 interface AuthTextInputProps {
+  disabled?: boolean;
+  onSubmitEditing?: TextInputProps['onSubmitEditing'];
   placeholder: string;
+  returnKeyType?: TextInputProps['returnKeyType'];
   value: string;
   onChangeText: (text: string) => void;
   secureTextEntry?: boolean;
+  showPasswordToggle?: boolean;
   testID?: string;
   textContentType?: TextInputProps['textContentType'];
 }
 
 export function AuthTextInput({
+  disabled,
+  onSubmitEditing,
   placeholder,
+  returnKeyType,
   value,
   onChangeText,
   secureTextEntry,
+  showPasswordToggle,
   testID,
   textContentType,
 }: AuthTextInputProps) {
   const { mode, colors } = useTheme();
   const [focused, setFocused] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const isSecure = Boolean(secureTextEntry && !passwordVisible);
 
   return (
-    <TextInput
-      accessibilityLabel={placeholder}
-      autoCapitalize="none"
-      autoCorrect={false}
-      onBlur={() => setFocused(false)}
-      onChangeText={onChangeText}
-      onFocus={() => setFocused(true)}
-      placeholder={placeholder}
-      placeholderTextColor={label(mode, 0.35)}
-      secureTextEntry={secureTextEntry}
-      selectionColor={accent.orange}
+    <View
       style={[
-        styles.input,
+        styles.container,
         {
           backgroundColor: colors.searchBg,
           borderColor: focused ? accent.orange : hairline(mode, 0.08),
-          color: colors.text,
+          opacity: disabled ? 0.55 : 1,
         },
       ]}
-      testID={testID}
-      textContentType={textContentType}
-      value={value}
-    />
+    >
+      <TextInput
+        accessibilityLabel={placeholder}
+        autoCapitalize="none"
+        autoCorrect={false}
+        editable={!disabled}
+        onBlur={() => setFocused(false)}
+        onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
+        onSubmitEditing={onSubmitEditing}
+        placeholder={placeholder}
+        placeholderTextColor={label(mode, 0.35)}
+        returnKeyType={returnKeyType}
+        secureTextEntry={isSecure}
+        selectionColor={accent.orange}
+        style={[styles.input, { color: colors.text }]}
+        testID={testID}
+        textContentType={textContentType}
+        value={value}
+      />
+      {showPasswordToggle ? (
+        <Pressable
+          accessibilityLabel={passwordVisible ? 'Hide password' : 'Show password'}
+          accessibilityRole="button"
+          disabled={disabled}
+          hitSlop={10}
+          onPress={() => setPasswordVisible((visible) => !visible)}
+          style={styles.visibilityButton}
+        >
+          {passwordVisible ? (
+            <EyeOff color={label(mode, 0.55)} size={19} />
+          ) : (
+            <Eye color={label(mode, 0.55)} size={19} />
+          )}
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  input: {
+  container: {
     borderRadius: 14,
     borderWidth: 1,
+    flexDirection: 'row',
     fontSize: 16,
     minHeight: 52,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
     paddingHorizontal: 16,
     paddingVertical: 13,
+  },
+  visibilityButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
   },
 });
