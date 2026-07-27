@@ -11,10 +11,36 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 jest.mock('expo-crypto', () => ({
-  getRandomBytes: jest.fn((length: number) => new Uint8Array(length).fill(0xab)),
-  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
-  CryptoEncoding: { HEX: 'hex' },
-  digestStringAsync: jest.fn(),
+  ...(() => {
+    const { createHash } = jest.requireActual('crypto') as {
+      createHash: (algorithm: 'sha256') => {
+        update: (input: string, encoding: 'utf8') => {
+          digest: (encoding: 'hex') => string;
+        };
+      };
+    };
+
+    return {
+      getRandomBytes: jest.fn((length: number) =>
+        new Uint8Array(length).fill(0xab),
+      ),
+      CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+      CryptoEncoding: { HEX: 'hex' },
+      digestStringAsync: jest.fn(
+        async (
+          algorithm: string,
+          input: string,
+          options?: { encoding?: string },
+        ) => {
+          if (algorithm !== 'SHA-256' || options?.encoding !== 'hex') {
+            throw new Error('Unexpected Expo Crypto digest options');
+          }
+
+          return createHash('sha256').update(input, 'utf8').digest('hex');
+        },
+      ),
+    };
+  })(),
 }));
 
 import * as SecureStore from 'expo-secure-store';
@@ -37,12 +63,7 @@ const expectedDigest =
 
 beforeEach(() => {
   mockStore.clear();
-  mockDigestStringAsync.mockReset();
-  mockDigestStringAsync.mockImplementation(async (_algorithm, input) =>
-    input === `cfops-local-account:v2\0${'ab'.repeat(16)}\0hunter2secret`
-      ? expectedDigest
-      : '00'.repeat(32),
-  );
+  mockDigestStringAsync.mockClear();
 });
 
 test('returns null when no local account exists', async () => {
@@ -159,6 +180,28 @@ test('rejects an unknown password hash version as corrupt data', async () => {
   );
 
   await expect(getAccount()).rejects.toMatchObject({ code: 'corrupt' });
+});
+
+test('rejects an otherwise-valid account that omits its password hash version', async () => {
+  mockStore.set(
+    'local-account-v2',
+    JSON.stringify({
+      name: 'JT',
+      organization: '',
+      email: '',
+      saltHex: 'ab'.repeat(16),
+      hashHex: expectedDigest,
+      biometricsEnabled: false,
+      onboardingComplete: true,
+      onboardingStep: 'done',
+      createdAt: 0,
+    }),
+  );
+
+  await expect(getAccount()).rejects.toMatchObject({
+    code: 'corrupt',
+    name: 'LocalAccountStorageError',
+  });
 });
 
 test('uses native random bytes for the password salt', async () => {

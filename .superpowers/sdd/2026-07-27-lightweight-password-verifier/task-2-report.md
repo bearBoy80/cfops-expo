@@ -66,3 +66,52 @@ UI behavior changed.
   Expo Crypto native methods and SecureStore.
 - The stored password remains a salt and hash only; no plaintext password is
   persisted.
+
+## Review fix 1/5 — faithful Expo Crypto native boundary doubles
+
+### Root cause and change
+
+The original Expo Crypto doubles were not cryptographic boundaries: the
+password-hash test always returned the expected vector, while account and UI
+fixtures returned conditional, constant, or polynomial values. Consequently,
+some incorrect verifier inputs or options could still pass.
+
+All four affected fixtures now use `jest.requireActual('crypto')` and Node
+`createHash('sha256')` over the *actual* supplied UTF-8 input, returning a hex
+digest. Each double exposes `CryptoDigestAlgorithm.SHA256` and
+`CryptoEncoding.HEX`, and rejects any other algorithm or encoding. The test
+fixture remains the native Expo Crypto boundary; production code was not
+changed.
+
+Added an otherwise-valid `local-account-v2` fixture that omits only
+`passwordHashVersion`; it rejects with `LocalAccountStorageError` and code
+`corrupt`.
+
+### RED mutation evidence
+
+After installing the faithful boundary doubles, temporary, uncommitted
+mutations to `src/auth/passwordHash.ts` produced the expected failures in
+`src/auth/__tests__/passwordHash.test.ts`:
+
+1. Changing the domain from `v2` to `v3` changed the independently computed
+   digest and failed the supplied vector assertion.
+2. Changing SHA-256 to SHA-1 was rejected as unexpected native digest options.
+3. Changing hex output to base64 was rejected as unexpected native digest
+   options.
+4. Replacing the supplied password with a literal changed the independently
+   computed digest and failed the vector assertion.
+
+All mutations were reverted before final verification.
+
+### Final verification
+
+1. `npm test -- --runInBand src/auth/__tests__/passwordHash.test.ts src/auth/__tests__/localAccount.test.ts src/auth/__tests__/AuthGate.test.tsx src/auth/__tests__/screens.test.tsx`
+   — 4 suites, 58 tests passed.
+2. `npm test -- --runInBand` — 10 suites, 76 tests passed.
+3. `npx tsc --noEmit` — passed with exit code 0.
+4. `git diff --check` — passed with exit code 0.
+
+The first TypeScript run exposed that this project does not enable Node type
+definitions for `typeof import('crypto')`. The doubles therefore use a local
+minimal type assertion around `jest.requireActual('crypto')`; the runtime hash
+behavior and coverage remain unchanged, and no dependency was added.

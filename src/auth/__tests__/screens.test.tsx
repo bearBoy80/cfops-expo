@@ -46,19 +46,36 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 jest.mock('expo-crypto', () => ({
-  getRandomBytes: jest.fn((length: number) => new Uint8Array(length).fill(0xab)),
-  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
-  CryptoEncoding: { HEX: 'hex' },
-  digestStringAsync: jest.fn(async (_algorithm: string, input: string) =>
-    input
-      .split('')
-      .reduce(
-        (hash, character) => ((hash * 31 + character.charCodeAt(0)) >>> 0),
-        0,
-      )
-      .toString(16)
-      .padStart(64, '0'),
-  ),
+  ...(() => {
+    const { createHash } = jest.requireActual('crypto') as {
+      createHash: (algorithm: 'sha256') => {
+        update: (input: string, encoding: 'utf8') => {
+          digest: (encoding: 'hex') => string;
+        };
+      };
+    };
+
+    return {
+      getRandomBytes: jest.fn((length: number) =>
+        new Uint8Array(length).fill(0xab),
+      ),
+      CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+      CryptoEncoding: { HEX: 'hex' },
+      digestStringAsync: jest.fn(
+        async (
+          algorithm: string,
+          input: string,
+          options?: { encoding?: string },
+        ) => {
+          if (algorithm !== 'SHA-256' || options?.encoding !== 'hex') {
+            throw new Error('Unexpected Expo Crypto digest options');
+          }
+
+          return createHash('sha256').update(input, 'utf8').digest('hex');
+        },
+      ),
+    };
+  })(),
 }));
 
 jest.mock('expo-local-authentication', () => ({

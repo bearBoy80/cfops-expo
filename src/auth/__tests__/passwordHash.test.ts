@@ -1,7 +1,31 @@
 jest.mock('expo-crypto', () => ({
-  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
-  CryptoEncoding: { HEX: 'hex' },
-  digestStringAsync: jest.fn(),
+  ...(() => {
+    const { createHash } = jest.requireActual('crypto') as {
+      createHash: (algorithm: 'sha256') => {
+        update: (input: string, encoding: 'utf8') => {
+          digest: (encoding: 'hex') => string;
+        };
+      };
+    };
+
+    return {
+      CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+      CryptoEncoding: { HEX: 'hex' },
+      digestStringAsync: jest.fn(
+        async (
+          algorithm: string,
+          input: string,
+          options?: { encoding?: string },
+        ) => {
+          if (algorithm !== 'SHA-256' || options?.encoding !== 'hex') {
+            throw new Error('Unexpected Expo Crypto digest options');
+          }
+
+          return createHash('sha256').update(input, 'utf8').digest('hex');
+        },
+      ),
+    };
+  })(),
 }));
 
 import * as Crypto from 'expo-crypto';
@@ -16,10 +40,7 @@ const password = 'hunter2secret';
 const expectedDigest =
   'ce827f2498ac95ca6e058222da44d81a5c1007a6ea4d4edc16e1e066e3f61266';
 
-beforeEach(() => {
-  mockDigestStringAsync.mockReset();
-  mockDigestStringAsync.mockResolvedValue(expectedDigest);
-});
+beforeEach(() => mockDigestStringAsync.mockClear());
 
 test('derives the version 2 SHA-256 digest from the domain-separated password input', async () => {
   await expect(derivePasswordHash(password, saltHex)).resolves.toBe(expectedDigest);
