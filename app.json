@@ -46,9 +46,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ],
-      "expo-build-properties",
-      "react-native-quick-crypto"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
