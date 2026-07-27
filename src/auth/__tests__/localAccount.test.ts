@@ -16,7 +16,10 @@ jest.mock('expo-crypto', () => ({
 
 import * as SecureStore from 'expo-secure-store';
 import {
+  advanceOnboarding,
+  completeOnboarding,
   createAccount,
+  createOnboardingAccount,
   deleteAccount,
   getAccount,
   LocalAccountStorageError,
@@ -87,4 +90,59 @@ test('deletes the local account for explicit recovery', async () => {
   await deleteAccount();
 
   expect(await getAccount()).toBeNull();
+});
+
+test('persists an incomplete onboarding account and advances its step', async () => {
+  await createOnboardingAccount(
+    { organization: 'Acme', name: 'JT', email: 'jt@acme.com' },
+    'hunter2secret',
+    true,
+  );
+
+  expect(await getAccount()).toMatchObject({
+    organization: 'Acme',
+    name: 'JT',
+    email: 'jt@acme.com',
+    biometricsEnabled: true,
+    onboardingComplete: false,
+    onboardingStep: 'connect',
+  });
+
+  await advanceOnboarding('done');
+  expect((await getAccount())?.onboardingStep).toBe('done');
+});
+
+test('marks onboarding complete without changing the password hash', async () => {
+  await createOnboardingAccount(
+    { organization: 'Acme', name: 'JT', email: 'jt@acme.com' },
+    'hunter2secret',
+    false,
+  );
+  const hashBefore = (await getAccount())?.hashHex;
+
+  await completeOnboarding();
+
+  expect(await getAccount()).toMatchObject({
+    onboardingComplete: true,
+    onboardingStep: 'done',
+    hashHex: hashBefore,
+  });
+});
+
+test('treats a legacy account without onboarding fields as complete', async () => {
+  await createAccount('Legacy User', 'hunter2secret', false);
+  const current = JSON.parse(mockStore.get('local-account-v1')!);
+  delete current.organization;
+  delete current.email;
+  delete current.onboardingComplete;
+  delete current.onboardingStep;
+  mockStore.set('local-account-v1', JSON.stringify(current));
+
+  expect(await getAccount()).toMatchObject({
+    name: 'Legacy User',
+    organization: '',
+    email: '',
+    onboardingComplete: true,
+    onboardingStep: 'done',
+  });
 });

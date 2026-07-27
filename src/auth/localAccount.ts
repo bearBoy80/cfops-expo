@@ -26,11 +26,23 @@ export class LocalAccountStorageError extends Error {
   }
 }
 
+export type PersistedOnboardingStep = 'connect' | 'done';
+
+export interface OnboardingProfile {
+  organization: string;
+  name: string;
+  email: string;
+}
+
 export interface LocalAccount {
   name: string;
+  organization: string;
+  email: string;
   saltHex: string;
   hashHex: string;
   biometricsEnabled: boolean;
+  onboardingComplete: boolean;
+  onboardingStep: PersistedOnboardingStep;
   createdAt: number;
 }
 
@@ -73,6 +85,32 @@ function parseAccount(stored: string): LocalAccount {
     throw new LocalAccountStorageError('corrupt');
   }
 
+  const hasOnboardingFields = [
+    'organization',
+    'email',
+    'onboardingComplete',
+    'onboardingStep',
+  ].some((field) => field in candidate);
+
+  if (!hasOnboardingFields) {
+    return {
+      ...candidate,
+      organization: '',
+      email: '',
+      onboardingComplete: true,
+      onboardingStep: 'done',
+    } as LocalAccount;
+  }
+
+  if (
+    typeof candidate.organization !== 'string' ||
+    typeof candidate.email !== 'string' ||
+    typeof candidate.onboardingComplete !== 'boolean' ||
+    (candidate.onboardingStep !== 'connect' && candidate.onboardingStep !== 'done')
+  ) {
+    throw new LocalAccountStorageError('corrupt');
+  }
+
   return candidate as LocalAccount;
 }
 
@@ -87,6 +125,22 @@ export async function getAccount(): Promise<LocalAccount | null> {
   return stored ? parseAccount(stored) : null;
 }
 
+async function saveAccount(account: LocalAccount): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(account));
+  } catch {
+    throw new LocalAccountStorageError('unavailable');
+  }
+}
+
+async function requireAccount(): Promise<LocalAccount> {
+  const account = await getAccount();
+  if (!account) {
+    throw new LocalAccountStorageError('corrupt');
+  }
+  return account;
+}
+
 export async function createAccount(
   name: string,
   password: string,
@@ -95,13 +149,50 @@ export async function createAccount(
   const saltHex = bytesToHex(getRandomBytes(16));
   const account: LocalAccount = {
     name,
+    organization: '',
+    email: '',
     saltHex,
     hashHex: hashPassword(password, saltHex),
     biometricsEnabled,
+    onboardingComplete: true,
+    onboardingStep: 'done',
     createdAt: Date.now(),
   };
 
-  await SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(account));
+  await saveAccount(account);
+}
+
+export async function createOnboardingAccount(
+  profile: OnboardingProfile,
+  password: string,
+  biometricsEnabled: boolean,
+): Promise<void> {
+  const saltHex = bytesToHex(getRandomBytes(16));
+  await saveAccount({
+    ...profile,
+    saltHex,
+    hashHex: hashPassword(password, saltHex),
+    biometricsEnabled,
+    onboardingComplete: false,
+    onboardingStep: 'connect',
+    createdAt: Date.now(),
+  });
+}
+
+export async function advanceOnboarding(
+  step: PersistedOnboardingStep,
+): Promise<void> {
+  const account = await requireAccount();
+  await saveAccount({ ...account, onboardingStep: step });
+}
+
+export async function completeOnboarding(): Promise<void> {
+  const account = await requireAccount();
+  await saveAccount({
+    ...account,
+    onboardingComplete: true,
+    onboardingStep: 'done',
+  });
 }
 
 export async function verifyPassword(password: string): Promise<boolean> {
@@ -117,10 +208,7 @@ export async function setBiometricsEnabled(enabled: boolean): Promise<void> {
     throw new Error('no local account');
   }
 
-  await SecureStore.setItemAsync(
-    STORAGE_KEY,
-    JSON.stringify({ ...account, biometricsEnabled: enabled }),
-  );
+  await saveAccount({ ...account, biometricsEnabled: enabled });
 }
 
 export async function deleteAccount(): Promise<void> {
