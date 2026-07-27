@@ -42,10 +42,20 @@ showing a misleading error.
 
 ## Performance and Security
 
-Replace synchronous `scrypt` verification with the package's compatible
-`scryptAsync` implementation. Retain the existing `N`, `r`, `p`, salt, and
-derived-key length so stored accounts require no migration and password
-strength is not weakened. Passwords remain component-local and must never be
+The pure-JavaScript `@noble/hashes` `scryptAsync` implementation still executes
+the expensive work on Hermes and takes about 5.7 seconds in the iOS Simulator.
+Replace it with `react-native-quick-crypto@1.1.6`, whose asynchronous scrypt
+implementation performs the OpenSSL work off the JavaScript thread.
+
+Retain `N = 2^14`, `r = 8`, `p = 1`, the existing hexadecimal salt, and a
+32-byte derived key. Set `maxmem` to 32 MiB. These values preserve existing
+account hashes, so no password or account migration is required. A fixed hash
+vector and an existing-account unlock must verify compatibility.
+
+This native dependency requires an Expo development build; Expo Go is no longer
+a supported runtime for the authentication path. A missing native module is a
+build/configuration error and must not silently fall back to the slow
+JavaScript implementation. Passwords remain component-local and must never be
 logged or newly persisted.
 
 ## Verification
@@ -53,6 +63,8 @@ logged or newly persisted.
 Automated tests must cover empty passwords, visible busy state, duplicate-submit
 prevention, correct and incorrect passwords, manual-only biometrics, and hash
 compatibility. Run the focused Jest tests, the complete Jest suite, and
-`npx tsc --noEmit`. Manually verify focus, keyboard submission, pressed and busy
-feedback, password visibility, errors, Face ID, and successful navigation on
-the iOS Simulator.
+`npx tsc --noEmit`. Build and launch the iOS development client, then manually
+verify focus, keyboard submission, pressed and busy feedback, password
+visibility, errors, Face ID, and successful navigation. Busy feedback should
+appear in the first rendered frame and a correct password should reach the tab
+application within one second on the iOS Simulator.
