@@ -23,7 +23,7 @@ import {
 } from '../../src/theme/tokens';
 
 export default function Onboarding() {
-  const { onAccountCreated } = useAuth();
+  const { onOnboardingCompleted } = useAuth();
   const { mode, colors } = useTheme();
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
@@ -50,7 +50,7 @@ export default function Onboarding() {
     setBusy(true);
     try {
       await createAccount(name.trim(), password, biometricsEnabled);
-      onAccountCreated();
+      onOnboardingCompleted();
     } catch {
       setError('Could not create the local account. Please try again.');
     } finally {

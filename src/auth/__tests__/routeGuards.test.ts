@@ -3,6 +3,7 @@ import { routeGuards } from '../routeGuards';
 test.each([
   ['loading', 'loading'],
   ['no-account', 'onboarding'],
+  ['onboarding', 'onboarding'],
   ['locked', 'unlock'],
   ['error', 'error'],
   ['unlocked', 'tabs'],

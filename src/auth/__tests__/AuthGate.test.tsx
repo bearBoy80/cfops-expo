@@ -2,7 +2,7 @@ import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { AppState, type AppStateStatus } from 'react-native';
 import { AuthGateProvider, useAuth } from '../AuthGate';
-import { createAccount } from '../localAccount';
+import { createAccount, createOnboardingAccount } from '../localAccount';
 
 const mockStore = new Map<string, string>();
 
@@ -54,11 +54,27 @@ test('loads an existing account as locked and supports lock transitions', async 
   expect(result.current.status).toBe('locked');
 });
 
-test('moves directly to unlocked after account creation', async () => {
+test('loads an incomplete account into onboarding instead of locked', async () => {
+  await createOnboardingAccount(
+    { organization: 'Acme', name: 'JT', email: 'jt@acme.com' },
+    'hunter2secret',
+    false,
+  );
   const { result } = renderHook(() => useAuth(), { wrapper });
-  await waitFor(() => expect(result.current.status).toBe('no-account'));
 
-  act(() => result.current.onAccountCreated());
+  await waitFor(() => expect(result.current.status).toBe('onboarding'));
+});
+
+test('completes onboarding into tabs only while foregrounded', async () => {
+  await createOnboardingAccount(
+    { organization: 'Acme', name: 'JT', email: 'jt@acme.com' },
+    'hunter2secret',
+    false,
+  );
+  const { result } = renderHook(() => useAuth(), { wrapper });
+  await waitFor(() => expect(result.current.status).toBe('onboarding'));
+
+  act(() => result.current.onOnboardingCompleted());
 
   expect(result.current.status).toBe('unlocked');
 });
@@ -90,14 +106,19 @@ test('rejects a late unlock completion while the app is backgrounded', async () 
   expect(result.current.status).toBe('unlocked');
 });
 
-test('rejects late account creation completion while backgrounded', async () => {
+test('late onboarding completion while backgrounded stays locked', async () => {
+  await createOnboardingAccount(
+    { organization: 'Acme', name: 'JT', email: 'jt@acme.com' },
+    'hunter2secret',
+    false,
+  );
   const { result } = renderHook(() => useAuth(), { wrapper });
-  await waitFor(() => expect(result.current.status).toBe('no-account'));
+  await waitFor(() => expect(result.current.status).toBe('onboarding'));
 
   act(() => appStateListener?.('background'));
-  act(() => result.current.onAccountCreated());
+  act(() => result.current.onOnboardingCompleted());
 
-  expect(result.current.status).toBe('no-account');
+  expect(result.current.status).toBe('locked');
 });
 
 test('surfaces corrupt storage and supports an explicit local reset', async () => {

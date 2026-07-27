@@ -12,6 +12,7 @@ import { deleteAccount, getAccount } from './localAccount';
 export type AuthStatus =
   | 'loading'
   | 'no-account'
+  | 'onboarding'
   | 'locked'
   | 'unlocked'
   | 'error';
@@ -21,7 +22,7 @@ interface AuthValue {
   errorMessage: string | null;
   unlock: () => void;
   lock: () => void;
-  onAccountCreated: () => void;
+  onOnboardingCompleted: () => void;
   reportAccountError: () => void;
   resetAccount: () => Promise<void>;
 }
@@ -43,7 +44,13 @@ export function AuthGateProvider({
     void getAccount()
       .then((account) => {
         if (active) {
-          setStatus(account ? 'locked' : 'no-account');
+          setStatus(
+            !account
+              ? 'no-account'
+              : account.onboardingComplete
+                ? 'locked'
+                : 'onboarding',
+          );
         }
       })
       .catch(() => {
@@ -85,12 +92,9 @@ export function AuthGateProvider({
         setStatus('unlocked');
       },
       lock: () => setStatus('locked'),
-      onAccountCreated: () => {
-        if (!isForeground.current) {
-          return;
-        }
+      onOnboardingCompleted: () => {
         setErrorMessage(null);
-        setStatus('unlocked');
+        setStatus(isForeground.current ? 'unlocked' : 'locked');
       },
       reportAccountError: () => {
         setErrorMessage(

@@ -11,7 +11,7 @@ export interface RouteGuards {
 export function routeGuards(status: AuthStatus): RouteGuards {
   return {
     loading: status === 'loading',
-    onboarding: status === 'no-account',
+    onboarding: status === 'no-account' || status === 'onboarding',
     unlock: status === 'locked',
     error: status === 'error',
     tabs: status === 'unlocked',
