@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -23,23 +24,75 @@ export default function Unlock() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+  const [biometricsBusy, setBiometricsBusy] = useState(false);
+  const isForeground = useRef(AppState.currentState === 'active');
+  const isMounted = useRef(true);
+  const biometricFlight = useRef<Promise<void> | null>(null);
 
-  const tryBiometrics = async () => {
-    const hasHardware = await LocalAuthentication.hasHardwareAsync();
-    const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-    if (!hasHardware || !isEnrolled) {
-      return;
+  const tryBiometrics = () => {
+    if (biometricFlight.current) {
+      return biometricFlight.current;
     }
 
-    const result = await LocalAuthentication.authenticateAsync({
-      cancelLabel: 'Use password',
-      fallbackLabel: 'Use password',
-      promptMessage: 'Unlock cloudflareOps',
+    let flight: Promise<void>;
+    flight = Promise.resolve().then(async () => {
+      try {
+        if (!isForeground.current) {
+          return;
+        }
+        if (isMounted.current) {
+          setBiometricsBusy(true);
+        }
+
+        const hasHardware =
+          await LocalAuthentication.hasHardwareAsync();
+        if (!hasHardware || !isForeground.current) {
+          return;
+        }
+
+        const isEnrolled =
+          await LocalAuthentication.isEnrolledAsync();
+        if (!isEnrolled || !isForeground.current) {
+          return;
+        }
+
+        const result = await LocalAuthentication.authenticateAsync({
+          biometricsSecurityLevel: 'strong',
+          cancelLabel: 'Use password',
+          disableDeviceFallback: true,
+          fallbackLabel: 'Use password',
+          promptMessage: 'Unlock cloudflareOps',
+        });
+        if (result.success && isForeground.current) {
+          unlock();
+        }
+      } catch {
+        // Native biometric failures leave password and biometric retry available.
+      } finally {
+        if (biometricFlight.current === flight) {
+          biometricFlight.current = null;
+        }
+        if (isMounted.current) {
+          setBiometricsBusy(false);
+        }
+      }
     });
-    if (result.success) {
-      unlock();
-    }
+
+    biometricFlight.current = flight;
+    return flight;
   };
+
+  useEffect(() => {
+    isMounted.current = true;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      isForeground.current = nextState === 'active';
+    });
+
+    return () => {
+      isMounted.current = false;
+      subscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -141,14 +194,24 @@ export default function Unlock() {
         {biometricsEnabled ? (
           <Pressable
             accessibilityRole="button"
+            accessibilityState={{
+              busy: biometricsBusy,
+              disabled: biometricsBusy,
+            }}
+            disabled={biometricsBusy}
             onPress={tryBiometrics}
-            style={styles.biometricButton}
+            style={[
+              styles.biometricButton,
+              biometricsBusy && styles.biometricButtonBusy,
+            ]}
           >
             <ScanFace color={label(mode, 0.65)} size={19} />
             <Text
               style={[styles.biometricText, { color: label(mode, 0.65) }]}
             >
-              Use Face ID / fingerprint
+              {biometricsBusy
+                ? 'Authenticating…'
+                : 'Use Face ID / fingerprint'}
             </Text>
           </Pressable>
         ) : null}
@@ -165,6 +228,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 20,
     padding: 10,
+  },
+  biometricButtonBusy: {
+    opacity: 0.55,
   },
   biometricText: {
     fontSize: 14,

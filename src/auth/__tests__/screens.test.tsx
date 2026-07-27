@@ -24,6 +24,10 @@ import { accent } from '../../theme/tokens';
 const mockStore = new Map<string, string>();
 const appStateListeners = new Set<(state: AppStateStatus) => void>();
 const appStateSpy = jest.spyOn(AppState, 'addEventListener');
+const originalCurrentStateDescriptor = Object.getOwnPropertyDescriptor(
+  AppState,
+  'currentState',
+);
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) => mockStore.get(key) ?? null),
@@ -81,6 +85,10 @@ function renderWithProviders(ui: React.ReactElement) {
 beforeEach(() => {
   mockStore.clear();
   appStateListeners.clear();
+  Object.defineProperty(AppState, 'currentState', {
+    configurable: true,
+    value: 'active',
+  });
   appStateSpy.mockImplementation((_type, listener) => {
     appStateListeners.add(listener);
     return {
@@ -119,7 +127,16 @@ beforeEach(() => {
     .mockResolvedValue({ success: false, error: 'user_cancel' });
 });
 
-afterAll(() => appStateSpy.mockRestore());
+afterAll(() => {
+  appStateSpy.mockRestore();
+  if (originalCurrentStateDescriptor) {
+    Object.defineProperty(
+      AppState,
+      'currentState',
+      originalCurrentStateDescriptor,
+    );
+  }
+});
 
 test('runs the Figma onboarding flow and persists completion', async () => {
   renderWithProviders(<Onboarding />);
@@ -426,8 +443,141 @@ test('unlock opens the gate after successful biometric authentication', async ()
     expect(screen.getByTestId('auth-status').props.children).toBe('unlocked'),
   );
   expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledWith(
-    expect.objectContaining({ promptMessage: 'Unlock cloudflareOps' }),
+    expect.objectContaining({
+      biometricsSecurityLevel: 'strong',
+      disableDeviceFallback: true,
+      promptMessage: 'Unlock cloudflareOps',
+    }),
   );
+});
+
+test('keeps biometric rejection contained and leaves retry available', async () => {
+  jest
+    .mocked(LocalAuthentication.hasHardwareAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.isEnrolledAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.authenticateAsync)
+    .mockRejectedValue(new Error('native prompt failed'));
+  await createAccount('JT', 'hunter2secret', true);
+
+  renderWithProviders(<Unlock />);
+
+  const biometricButton = await screen.findByRole('button', {
+    name: 'Use Face ID / fingerprint',
+  });
+  await waitFor(() =>
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1),
+  );
+  await waitFor(() => expect(biometricButton).toBeEnabled());
+  expect(screen.getByTestId('auth-status').props.children).toBe('locked');
+});
+
+test('does not start automatic biometrics after the app backgrounds', async () => {
+  jest
+    .mocked(LocalAuthentication.hasHardwareAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.isEnrolledAsync)
+    .mockResolvedValue(true);
+  await createAccount('JT', 'hunter2secret', true);
+
+  renderWithProviders(<Unlock />);
+  act(() => {
+    appStateListeners.forEach((listener) => listener('background'));
+  });
+
+  await screen.findByText('Welcome back, JT');
+  await act(async () => undefined);
+
+  expect(LocalAuthentication.authenticateAsync).not.toHaveBeenCalled();
+  expect(screen.getByTestId('auth-status').props.children).toBe('locked');
+});
+
+test('does not start automatic biometrics when mounted outside the foreground', async () => {
+  const currentStateDescriptor = Object.getOwnPropertyDescriptor(
+    AppState,
+    'currentState',
+  );
+  Object.defineProperty(AppState, 'currentState', {
+    configurable: true,
+    value: 'background',
+  });
+  jest
+    .mocked(LocalAuthentication.hasHardwareAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.isEnrolledAsync)
+    .mockResolvedValue(true);
+  await createAccount('JT', 'hunter2secret', true);
+
+  try {
+    renderWithProviders(<Unlock />);
+    await screen.findByText('Welcome back, JT');
+    await act(async () => undefined);
+
+    expect(LocalAuthentication.authenticateAsync).not.toHaveBeenCalled();
+    expect(screen.getByTestId('auth-status').props.children).toBe('locked');
+  } finally {
+    if (currentStateDescriptor) {
+      Object.defineProperty(
+        AppState,
+        'currentState',
+        currentStateDescriptor,
+      );
+    }
+  }
+});
+
+test('serializes double biometric triggers and restores the busy action after rejection', async () => {
+  let rejectManualPrompt: ((reason: Error) => void) | undefined;
+  jest
+    .mocked(LocalAuthentication.hasHardwareAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.isEnrolledAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.authenticateAsync)
+    .mockResolvedValueOnce({ success: false, error: 'user_cancel' })
+    .mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectManualPrompt = reject;
+        }),
+    );
+  await createAccount('JT', 'hunter2secret', true);
+  renderWithProviders(<Unlock />);
+
+  const biometricButton = await screen.findByRole('button', {
+    name: 'Use Face ID / fingerprint',
+  });
+  await waitFor(() =>
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1),
+  );
+  await waitFor(() => expect(biometricButton).toBeEnabled());
+
+  fireEvent.press(biometricButton);
+  fireEvent.press(biometricButton);
+
+  await waitFor(() =>
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(2),
+  );
+  expect(biometricButton).toBeDisabled();
+  expect(biometricButton.props.accessibilityState).toMatchObject({
+    busy: true,
+    disabled: true,
+  });
+
+  await act(async () => {
+    rejectManualPrompt?.(new Error('native prompt failed'));
+  });
+
+  await waitFor(() => expect(biometricButton).toBeEnabled());
+  expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(2);
+  expect(screen.getByTestId('auth-status').props.children).toBe('locked');
 });
 
 test('unlock presents its primary action as a full-width accent button', async () => {
