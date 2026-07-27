@@ -1,50 +1,36 @@
-import { scrypt as nativeScrypt } from 'react-native-quick-crypto';
+jest.mock('expo-crypto', () => ({
+  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+  CryptoEncoding: { HEX: 'hex' },
+  digestStringAsync: jest.fn(),
+}));
 
-import { derivePasswordHash } from '../passwordHash';
+import * as Crypto from 'expo-crypto';
+import {
+  CURRENT_PASSWORD_HASH_VERSION,
+  derivePasswordHash,
+} from '../passwordHash';
 
-const mockNativeScrypt = jest.mocked(nativeScrypt);
+const mockDigestStringAsync = jest.mocked(Crypto.digestStringAsync);
+const saltHex = 'ab'.repeat(16);
+const password = 'hunter2secret';
+const expectedDigest =
+  'ce827f2498ac95ca6e058222da44d81a5c1007a6ea4d4edc16e1e066e3f61266';
 
 beforeEach(() => {
-  mockNativeScrypt.mockClear();
+  mockDigestStringAsync.mockReset();
+  mockDigestStringAsync.mockResolvedValue(expectedDigest);
 });
 
-test('preserves the persisted scrypt hash with the native callback adapter', async () => {
-  await expect(
-    derivePasswordHash('hunter2secret', 'ab'.repeat(16)),
-  ).resolves.toBe(
-    '82a32df0a7b7133ed1ec35f9cecbe1422070cbbf835bfbda77dcc780c605d9d2',
-  );
-});
+test('derives the version 2 SHA-256 digest from the domain-separated password input', async () => {
+  await expect(derivePasswordHash(password, saltHex)).resolves.toBe(expectedDigest);
 
-test('rejects a native scrypt callback error', async () => {
-  const nativeError = new Error('native scrypt unavailable');
-  mockNativeScrypt.mockImplementationOnce(
-    (_password, _salt, _keyLength, _options, callback) => {
-      if (!callback) {
-        throw new Error('Native scrypt callback was not provided');
-      }
-
-      callback(nativeError);
-    },
-  );
-
-  await expect(derivePasswordHash('hunter2secret', 'ab'.repeat(16))).rejects.toBe(
-    nativeError,
+  expect(mockDigestStringAsync).toHaveBeenCalledWith(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    `cfops-local-account:v2\0${saltHex}\0${password}`,
+    { encoding: Crypto.CryptoEncoding.HEX },
   );
 });
 
-test('rejects when native scrypt omits the derived key', async () => {
-  mockNativeScrypt.mockImplementationOnce(
-    (_password, _salt, _keyLength, _options, callback) => {
-      if (!callback) {
-        throw new Error('Native scrypt callback was not provided');
-      }
-
-      callback(null);
-    },
-  );
-
-  await expect(derivePasswordHash('hunter2secret', 'ab'.repeat(16))).rejects.toThrow(
-    'Native scrypt completed without a derived key',
-  );
+test('exports version 2 as the current password hash version', () => {
+  expect(CURRENT_PASSWORD_HASH_VERSION).toBe(2);
 });

@@ -47,6 +47,18 @@ jest.mock('expo-secure-store', () => ({
 
 jest.mock('expo-crypto', () => ({
   getRandomBytes: jest.fn((length: number) => new Uint8Array(length).fill(0xab)),
+  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+  CryptoEncoding: { HEX: 'hex' },
+  digestStringAsync: jest.fn(async (_algorithm: string, input: string) =>
+    input
+      .split('')
+      .reduce(
+        (hash, character) => ((hash * 31 + character.charCodeAt(0)) >>> 0),
+        0,
+      )
+      .toString(16)
+      .padStart(64, '0'),
+  ),
 }));
 
 jest.mock('expo-local-authentication', () => ({
@@ -496,7 +508,7 @@ test('ignores a pending password success after the unlock screen unmounts', asyn
 
   view.rerender(withProviders(null));
   await act(async () => {
-    resolveRead?.(mockStore.get('local-account-v1') ?? null);
+    resolveRead?.(mockStore.get('local-account-v2') ?? null);
   });
 
   expect(screen.getByTestId('auth-status').props.children).toBe('locked');
@@ -566,7 +578,7 @@ test('shows a single busy password attempt and prevents duplicate submission', a
   expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1);
 
   await act(async () => {
-    resolveRead?.(mockStore.get('local-account-v1') ?? null);
+    resolveRead?.(mockStore.get('local-account-v2') ?? null);
   });
   await waitFor(() =>
     expect(screen.getByTestId('auth-status').props.children).toBe('unlocked'),
@@ -615,7 +627,7 @@ test('keeps password and biometric authentication mutually exclusive', async () 
   ).toBeDisabled();
 
   await act(async () => {
-    resolveRead?.(mockStore.get('local-account-v1') ?? null);
+    resolveRead?.(mockStore.get('local-account-v2') ?? null);
   });
   await waitFor(() =>
     expect(screen.getByTestId('auth-status').props.children).toBe('unlocked'),

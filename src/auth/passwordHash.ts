@@ -1,35 +1,14 @@
-import { Buffer, scrypt } from 'react-native-quick-crypto';
+import * as Crypto from 'expo-crypto';
 
-const SCRYPT_OPTIONS = {
-  N: 2 ** 14,
-  r: 8,
-  p: 1,
-  maxmem: 32 * 1024 * 1024,
-};
+export const CURRENT_PASSWORD_HASH_VERSION = 2;
 
 export async function derivePasswordHash(
   password: string,
   saltHex: string,
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    scrypt(
-      Buffer.from(password, 'utf8'),
-      Buffer.from(saltHex, 'hex'),
-      32,
-      SCRYPT_OPTIONS,
-      (error, derivedKey) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        if (!derivedKey) {
-          reject(new Error('Native scrypt completed without a derived key'));
-          return;
-        }
-
-        resolve(derivedKey.toString('hex'));
-      },
-    );
-  });
+  return Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    `cfops-local-account:v2\0${saltHex}\0${password}`,
+    { encoding: Crypto.CryptoEncoding.HEX },
+  );
 }

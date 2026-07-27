@@ -1,9 +1,11 @@
 import * as SecureStore from 'expo-secure-store';
 import { getRandomBytes } from 'expo-crypto';
-import { bytesToHex } from '@noble/hashes/utils.js';
-import { derivePasswordHash } from './passwordHash';
+import {
+  CURRENT_PASSWORD_HASH_VERSION,
+  derivePasswordHash,
+} from './passwordHash';
 
-const STORAGE_KEY = 'local-account-v1';
+const STORAGE_KEY = 'local-account-v2';
 
 export type LocalAccountStorageErrorCode = 'corrupt' | 'unavailable';
 
@@ -35,10 +37,17 @@ export interface LocalAccount {
   email: string;
   saltHex: string;
   hashHex: string;
+  passwordHashVersion: typeof CURRENT_PASSWORD_HASH_VERSION;
   biometricsEnabled: boolean;
   onboardingComplete: boolean;
   onboardingStep: PersistedOnboardingStep;
   createdAt: number;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  );
 }
 
 function isHex(value: unknown, length: number): value is string {
@@ -67,6 +76,7 @@ function parseAccount(stored: string): LocalAccount {
     candidate.name.trim().length === 0 ||
     !isHex(candidate.saltHex, 32) ||
     !isHex(candidate.hashHex, 64) ||
+    candidate.passwordHashVersion !== CURRENT_PASSWORD_HASH_VERSION ||
     typeof candidate.biometricsEnabled !== 'boolean' ||
     typeof candidate.createdAt !== 'number' ||
     !Number.isFinite(candidate.createdAt)
@@ -143,6 +153,7 @@ export async function createAccount(
     email: '',
     saltHex,
     hashHex,
+    passwordHashVersion: CURRENT_PASSWORD_HASH_VERSION,
     biometricsEnabled,
     onboardingComplete: true,
     onboardingStep: 'done',
@@ -163,6 +174,7 @@ export async function createOnboardingAccount(
     ...profile,
     saltHex,
     hashHex,
+    passwordHashVersion: CURRENT_PASSWORD_HASH_VERSION,
     biometricsEnabled,
     onboardingComplete: false,
     onboardingStep: 'connect',

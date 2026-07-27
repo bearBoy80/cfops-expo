@@ -20,6 +20,13 @@ jest.mock('expo-secure-store', () => ({
   }),
 }));
 
+jest.mock('expo-crypto', () => ({
+  getRandomBytes: jest.fn((length: number) => new Uint8Array(length).fill(0xab)),
+  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+  CryptoEncoding: { HEX: 'hex' },
+  digestStringAsync: jest.fn(async () => 'ab'.repeat(32)),
+}));
+
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <AuthGateProvider>{children}</AuthGateProvider>
 );
@@ -139,7 +146,7 @@ test('late onboarding completion while backgrounded stays locked', async () => {
 });
 
 test('surfaces corrupt storage and supports an explicit local reset', async () => {
-  mockStore.set('local-account-v1', '{"name":"JT"}');
+  mockStore.set('local-account-v2', '{"name":"JT"}');
   const { result } = renderHook(() => useAuth(), { wrapper });
 
   await waitFor(() => expect(result.current.status).toBe('error'));
@@ -148,5 +155,5 @@ test('surfaces corrupt storage and supports an explicit local reset', async () =
   await act(async () => result.current.resetAccount());
 
   expect(result.current.status).toBe('no-account');
-  expect(mockStore.has('local-account-v1')).toBe(false);
+  expect(mockStore.has('local-account-v2')).toBe(false);
 });
