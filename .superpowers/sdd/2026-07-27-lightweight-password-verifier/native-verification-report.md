@@ -78,3 +78,19 @@ Diagnostics: none
 - First-frame busy feedback was verified deterministically by Jest and code
   sequencing, but the native frame itself was too short for the Computer Use
   accessibility capture latency.
+
+## Review fix evidence — round 1
+
+- The durable deliverable is now tracked at the exact required path:
+  `.superpowers/sdd/2026-07-27-lightweight-password-verifier/native-verification-report.md`.
+- `task-3-report.md` remains available locally as the ignored SDD implementer
+  report and is no longer tracked.
+- After the intermediate path-fix commit, the required status check produced:
+
+```text
+git status --short
+(no output; clean)
+```
+
+- No production code changed and device verification was not rerun during this
+  review fix.
