@@ -2,11 +2,11 @@
 
 > **For Codex:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task.
 
-**Goal:** Make normal unlocks complete in milliseconds in Expo Go while preserving existing local accounts through a one-time legacy migration.
+**Goal:** Make unlocks complete in milliseconds in Expo Go with one lightweight verifier and no pre-release compatibility code.
 
-**Architecture:** New account records carry `passwordHashVersion: 2` and store a salted, domain-separated SHA-256 verifier produced by Expo Crypto. Records without the field are legacy scrypt records. A correct legacy password is verified once and immediately rewrites the same SecureStore record to version 2; incorrect input never mutates it.
+**Architecture:** Account records carry `passwordHashVersion: 2` and store a salted, domain-separated SHA-256 verifier produced by Expo Crypto. The SecureStore key is bumped to `local-account-v2`, so unpublished v1 test data is ignored and onboarding creates a fresh account.
 
-**Tech Stack:** Expo SDK 57, Expo Crypto, Expo SecureStore, TypeScript, Jest/jest-expo, `@noble/hashes` only for legacy migration.
+**Tech Stack:** Expo SDK 57, Expo Crypto, Expo SecureStore, TypeScript, Jest/jest-expo.
 
 ---
 
@@ -19,15 +19,15 @@
 - Modify: `jest.config.js`
 - Delete: `jest.setup.js`
 
-**Step 1: Remove native-only dependencies**
+**Step 1: Remove superseded crypto dependencies**
 
 Run:
 
 ```sh
-npm uninstall react-native-quick-crypto react-native-nitro-modules react-native-quick-base64 expo-dev-client expo-build-properties
+npm uninstall react-native-quick-crypto react-native-nitro-modules react-native-quick-base64 expo-dev-client expo-build-properties @noble/hashes
 ```
 
-Keep `expo-crypto`, `expo-secure-store`, and `@noble/hashes`.
+Keep `expo-crypto` and `expo-secure-store`.
 
 **Step 2: Remove configuration**
 
@@ -45,8 +45,8 @@ npx expo install --check
 git diff --check
 ```
 
-Expected: config resolves, dependencies are compatible, and no native-only
-package or plugin remains.
+Expected: config resolves, dependencies are compatible, and no Quick Crypto,
+development-client, Nitro, or Noble package remains.
 
 **Step 4: Commit**
 
@@ -55,7 +55,7 @@ git add package.json package-lock.json app.json jest.config.js jest.setup.js
 git commit -m "build: 恢复 Expo Go 认证运行时"
 ```
 
-### Task 2: Implement the current verifier and legacy migration using TDD
+### Task 2: Implement the version 2 verifier using TDD
 
 **Files:**
 - Modify: `src/auth/passwordHash.ts`
@@ -72,43 +72,38 @@ Before production changes, add tests proving:
 - password `hunter2secret` with salt `ab` repeated 16 times returns the
   independently precomputed lowercase digest
   `ce827f2498ac95ca6e058222da44d81a5c1007a6ea4d4edc16e1e066e3f61266`;
-- the legacy helper still produces the existing persisted scrypt vector.
 
 Mock only Expo Crypto's native digest boundary. Verify RED because production
 still imports Quick Crypto.
 
 **Step 2: Implement the minimal verifier**
 
-Export `CURRENT_PASSWORD_HASH_VERSION = 2`,
-`derivePasswordHash(password, saltHex)`, and
-`deriveLegacyPasswordHash(password, saltHex)`.
+Export `CURRENT_PASSWORD_HASH_VERSION = 2` and
+`derivePasswordHash(password, saltHex)`.
 
 The current function must call `digestStringAsync` with SHA-256 and hexadecimal
-encoding. The legacy function must retain exactly `N = 2^14`, `r = 8`, `p = 1`,
-and a 32-byte result. It exists only for versionless record migration.
+encoding. Do not add scrypt or any fallback.
 
-**Step 3: Write failing account migration tests**
+**Step 3: Write failing account version tests**
 
 Add behavior tests proving:
 
 - newly created normal and onboarding accounts persist version 2;
-- version 2 verification uses the current verifier without rewriting storage;
-- a correct versionless legacy password rewrites the complete account with the
-  same salt, a current digest, and version 2;
-- an incorrect legacy password returns false and does not write storage;
+- verification uses the current verifier without rewriting storage;
+- the storage key is `local-account-v2`, isolating unpublished v1 data;
 - unknown verifier versions are rejected as corrupt data.
 
 Verify RED before modifying `localAccount.ts`.
 
-**Step 4: Implement migration**
+**Step 4: Implement the v2 account schema**
 
-Add `passwordHashVersion?: 2` to `LocalAccount`. New accounts always set it.
-Parsing accepts an absent field as legacy and accepts exactly version 2;
-everything else is corrupt.
+Add required `passwordHashVersion: 2` to `LocalAccount`. New accounts always set
+it. Parsing accepts exactly version 2; absent or unknown versions are corrupt.
+Bump the storage key from `local-account-v1` to `local-account-v2`.
 
-`verifyPassword` selects the current verifier for version 2. For a versionless
-record, compare the legacy hash. Only on success derive the current hash and
-save `{ ...account, hashHex, passwordHashVersion: 2 }` before returning true.
+Replace Noble's `bytesToHex` import with a small local conversion of the
+16 random bytes returned by Expo Crypto. `verifyPassword` derives the current
+digest and compares it with the stored digest; it never rewrites storage.
 
 **Step 5: Verify**
 
@@ -129,7 +124,7 @@ git add src/auth/passwordHash.ts src/auth/localAccount.ts src/auth/__tests__/pas
 git commit -m "perf: 使用轻量密码校验并迁移旧账户"
 ```
 
-### Task 3: Verify Expo Go unlock behavior
+### Task 3: Verify fresh Expo Go unlock behavior
 
 **Files:**
 - Create: `.superpowers/sdd/2026-07-27-lightweight-password-verifier/native-verification-report.md`
@@ -139,16 +134,15 @@ git commit -m "perf: 使用轻量密码校验并迁移旧账户"
 Run Metro on a free port and open the existing iOS Simulator without clearing
 SecureStore data.
 
-**Step 2: Verify migration**
+**Step 2: Verify the fresh v2 flow**
 
-Unlock the versionless existing account once without recording its password.
-Confirm the account reaches the five-tab app and that the next launch uses the
-current verifier.
+Confirm unpublished v1 SecureStore data is ignored, complete onboarding to
+create a v2 account, close/reopen the app, and confirm it starts at Unlock.
 
 **Step 3: Measure the normal path**
 
-Measure from current-verifier password submission to the five-tab app. Target
-at most 250 ms on the iOS Simulator. Confirm first-frame busy feedback, wrong
+Measure from password submission to the five-tab app. Target at most 250 ms on
+the iOS Simulator. Confirm first-frame busy feedback, wrong
 password behavior, duplicate-submit prevention, and manual-only biometrics.
 
 **Step 4: Run final checks and record evidence**
