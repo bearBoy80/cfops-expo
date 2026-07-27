@@ -35,6 +35,10 @@ nearby `__tests__/` directory and name them `*.test.ts` or `*.test.tsx`.
 - `src/theme/` is the only source for application color tokens.
 - `docs/design-reference/` contains the Figma Make reference export.
 
+First launch follows the four-step Figma onboarding flow. After setup,
+every cold start and foreground return requires password or biometric unlock
+before the five-tab shell mounts.
+
 Local passwords are scrypt-hashed and stored through `expo-secure-store`.
 Never place passwords, Cloudflare credentials, or API tokens in source,
 AsyncStorage, SQLite, fixtures, or logs.

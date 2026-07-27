@@ -53,7 +53,7 @@ src/auth/routeGuards.ts                  onboarding 的 protected route guard
   - `completeOnboarding(): Promise<void>`
   - 扩展后的 `LocalAccount`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `src/auth/__tests__/localAccount.test.ts` 增加：
 
@@ -120,7 +120,7 @@ test('treats a legacy account without onboarding fields as complete', async () =
 });
 ```
 
-- [ ] **Step 2: 确认测试失败**
+- [x] **Step 2: 确认测试失败**
 
 Run:
 
@@ -130,7 +130,7 @@ npm test -- --runInBand src/auth/__tests__/localAccount.test.ts
 
 Expected: FAIL，新增函数未导出或新增字段不存在。
 
-- [ ] **Step 3: 扩展数据类型与兼容解析**
+- [x] **Step 3: 扩展数据类型与兼容解析**
 
 在 `src/auth/localAccount.ts` 定义：
 
@@ -161,7 +161,7 @@ export interface LocalAccount {
 `onboardingStep: 'done'`。若新增字段存在但类型或枚举值错误，继续抛
 `LocalAccountStorageError('corrupt')`。
 
-- [ ] **Step 4: 实现引导持久化函数**
+- [x] **Step 4: 实现引导持久化函数**
 
 先增加两个内部 helper：
 
@@ -224,7 +224,7 @@ export async function completeOnboarding(): Promise<void> {
 `createAccount(name, password, biometricsEnabled)`，但让它创建
 `onboardingComplete: true` 的兼容账号，避免破坏现有测试和调用方。
 
-- [ ] **Step 5: 运行测试与类型检查**
+- [x] **Step 5: 运行测试与类型检查**
 
 ```sh
 npm test -- --runInBand src/auth/__tests__/localAccount.test.ts
@@ -233,7 +233,7 @@ npx tsc --noEmit
 
 Expected: 全部 PASS，0 type errors。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```sh
 git add src/auth/localAccount.ts src/auth/__tests__/localAccount.test.ts
@@ -257,7 +257,7 @@ git commit -m "feat: 持久化 onboarding 进度与账号资料"
   - `onOnboardingCompleted(): void`
   - `routeGuards('onboarding').onboarding === true`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```tsx
 test('loads an incomplete account into onboarding instead of locked', async () => {
@@ -306,7 +306,7 @@ test('late onboarding completion while backgrounded stays locked', async () => {
 ['onboarding', 'onboarding'],
 ```
 
-- [ ] **Step 2: 确认测试失败**
+- [x] **Step 2: 确认测试失败**
 
 ```sh
 npm test -- --runInBand src/auth/__tests__/AuthGate.test.tsx src/auth/__tests__/routeGuards.test.ts
@@ -314,7 +314,7 @@ npm test -- --runInBand src/auth/__tests__/AuthGate.test.tsx src/auth/__tests__/
 
 Expected: FAIL，`onboarding` status 与 `onOnboardingCompleted` 不存在。
 
-- [ ] **Step 3: 实现状态映射**
+- [x] **Step 3: 实现状态映射**
 
 `AuthGate` 初始读取改为：
 
@@ -346,7 +346,7 @@ onOnboardingCompleted: () => {
 删除旧的 `onAccountCreated`，并更新所有测试与调用方。`routeGuards()` 中
 `onboarding` guard 同时接受 `no-account` 和 `onboarding`。
 
-- [ ] **Step 4: 运行测试与类型检查**
+- [x] **Step 4: 运行测试与类型检查**
 
 ```sh
 npm test -- --runInBand src/auth/__tests__/AuthGate.test.tsx src/auth/__tests__/routeGuards.test.ts
@@ -355,7 +355,7 @@ npx tsc --noEmit
 
 Expected: 全部 PASS，0 type errors。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```sh
 git add src/auth/AuthGate.tsx src/auth/routeGuards.ts src/auth/__tests__/AuthGate.test.tsx src/auth/__tests__/routeGuards.test.ts
@@ -380,7 +380,7 @@ git commit -m "feat: AuthGate 支持可恢复 onboarding 状态"
 - Consumes: Task 1 持久化函数、Task 2 `onOnboardingCompleted`
 - Produces: Figma 四步 UI 和中断恢复
 
-- [ ] **Step 1: 定义步骤类型与共享控件**
+- [x] **Step 1: 定义步骤类型与共享控件**
 
 `src/onboarding/types.ts`：
 
@@ -419,7 +419,7 @@ export function OnboardingField(props: {
 视觉值按 Figma 固定：页面水平 padding 24、主按钮 minHeight 52 / radius 16、
 field surface / radius 12、激活 dot 20×6、普通 dot 6×6、间距 6。
 
-- [ ] **Step 2: 写页面流程失败测试**
+- [x] **Step 2: 写页面流程失败测试**
 
 更新 `screens.test.tsx`：
 
@@ -478,7 +478,7 @@ test('validates organization, email, password length, and confirmation', async (
 });
 ```
 
-- [ ] **Step 3: 确认页面测试失败**
+- [x] **Step 3: 确认页面测试失败**
 
 ```sh
 npm test -- --runInBand src/auth/__tests__/screens.test.tsx
@@ -486,7 +486,7 @@ npm test -- --runInBand src/auth/__tests__/screens.test.tsx
 
 Expected: FAIL，当前页面没有 Welcome 与四步流程。
 
-- [ ] **Step 4: 实现四个步骤组件**
+- [x] **Step 4: 实现四个步骤组件**
 
 按 Figma source 实现以下固定内容：
 
@@ -515,7 +515,7 @@ Cloudflare connections arrive in the next milestone. Skip for now to continue.
 
 不得改变选择状态或创建模拟账号。
 
-- [ ] **Step 5: 实现 coordinator 与恢复逻辑**
+- [x] **Step 5: 实现 coordinator 与恢复逻辑**
 
 `app/onboarding/index.tsx` 初始化：
 
@@ -563,7 +563,7 @@ const handleEnterConsole = async () => {
 - 推进失败：`Could not save onboarding progress. Try again.`
 - 完成失败：`Could not finish setup. Try again.`
 
-- [ ] **Step 6: 增加恢复与写入失败测试**
+- [x] **Step 6: 增加恢复与写入失败测试**
 
 ```tsx
 test('resumes an incomplete onboarding account at the persisted step', async () => {
@@ -598,7 +598,7 @@ test('does not unlock when onboarding completion cannot be persisted', async () 
 });
 ```
 
-- [ ] **Step 7: 运行相关测试与类型检查**
+- [x] **Step 7: 运行相关测试与类型检查**
 
 ```sh
 npm test -- --runInBand src/auth
@@ -607,7 +607,7 @@ npx tsc --noEmit
 
 Expected: 全部 PASS，0 type errors。
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```sh
 git add app/onboarding src/onboarding src/auth/__tests__/screens.test.tsx
@@ -626,7 +626,7 @@ git commit -m "feat: 移植 Figma 四步 onboarding"
 - Consumes: Tasks 1–3 完整流程
 - Produces: 可交接的首次安装与后续认证行为
 
-- [ ] **Step 1: 增加冷启动状态回归测试**
+- [x] **Step 1: 增加冷启动状态回归测试**
 
 在 `AuthGate.test.tsx` 增加：
 
@@ -645,7 +645,7 @@ test('loads a completed onboarding account as locked on the next launch', async 
 });
 ```
 
-- [ ] **Step 2: 运行全量验证**
+- [x] **Step 2: 运行全量验证**
 
 ```sh
 npm test -- --runInBand
@@ -660,6 +660,11 @@ Expected: 所有测试通过、0 type errors、iOS bundle 成功、Face ID usage
 
 - [ ] **Step 3: 全新 iOS Simulator 手动验收**
 
+> Pending manual acceptance: a clean `cloudflareOps-Acceptance-iPhone16`
+> Simulator (iOS 18.3, Expo Go 57.0.5) was created, but the GUI session was
+> interrupted while entering the local Metro URL. No manual acceptance result
+> is recorded until the six checks below are completed in one uninterrupted run.
+
 使用无该项目 SecureStore 数据的 Simulator：
 
 1. 首次打开显示 Welcome，而不是单页 Create Account。
@@ -669,7 +674,7 @@ Expected: 所有测试通过、0 type errors、iOS bundle 成功、Face ID usage
 5. 打开 Settings 使 App 进入后台，再回 Expo Go，重新显示 Unlock。
 6. Metro 无红屏或未处理 Promise rejection。
 
-- [ ] **Step 4: 更新 README**
+- [x] **Step 4: 更新 README**
 
 在 Architecture 段说明：
 
@@ -679,7 +684,7 @@ every cold start and foreground return requires password or biometric unlock
 before the five-tab shell mounts.
 ```
 
-- [ ] **Step 5: 标记计划完成并 Commit**
+- [x] **Step 5: 标记计划完成并 Commit**
 
 将本计划已完成步骤改为 `[x]`，记录 iOS 验收设备和结果，然后：
 

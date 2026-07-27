@@ -2,7 +2,11 @@ import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { AppState, type AppStateStatus } from 'react-native';
 import { AuthGateProvider, useAuth } from '../AuthGate';
-import { createAccount, createOnboardingAccount } from '../localAccount';
+import {
+  completeOnboarding,
+  createAccount,
+  createOnboardingAccount,
+} from '../localAccount';
 
 const mockStore = new Map<string, string>();
 
@@ -63,6 +67,19 @@ test('loads an incomplete account into onboarding instead of locked', async () =
   const { result } = renderHook(() => useAuth(), { wrapper });
 
   await waitFor(() => expect(result.current.status).toBe('onboarding'));
+});
+
+test('loads a completed onboarding account as locked on the next launch', async () => {
+  await createOnboardingAccount(
+    { organization: 'Acme', name: 'JT', email: 'jt@acme.com' },
+    'hunter2secret',
+    false,
+  );
+  await completeOnboarding();
+
+  const { result } = renderHook(() => useAuth(), { wrapper });
+
+  await waitFor(() => expect(result.current.status).toBe('locked'));
 });
 
 test('completes onboarding into tabs only while foregrounded', async () => {
