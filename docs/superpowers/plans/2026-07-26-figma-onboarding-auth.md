@@ -658,12 +658,14 @@ git diff --check
 Expected: 所有测试通过、0 type errors、iOS bundle 成功、Face ID usage description
 仍存在、无 whitespace error。
 
-- [ ] **Step 3: 全新 iOS Simulator 手动验收**
+- [x] **Step 3: 全新 iOS Simulator 手动验收**
 
-> Pending manual acceptance: a clean `cloudflareOps-Acceptance-iPhone16`
-> Simulator (iOS 18.3, Expo Go 57.0.5) was created, but the GUI session was
-> interrupted while entering the local Metro URL. No manual acceptance result
-> is recorded until the six checks below are completed in one uninterrupted run.
+> Passed on clean `cloudflareOps-Acceptance-iPhone16` (iOS 18.3.1 / 22D8075,
+> UDID `BAE62E7A-C6A9-468A-9DE2-4F75CF99CCF0`, Expo Go 57.0.5): Figma Welcome
+> led through Create, Connect Skip, Done, and the five-tab Home shell. A cold
+> Expo Go relaunch showed `Welcome back, JT`; the correct synthetic password
+> unlocked the tabs; returning from iOS Settings showed Unlock again. Metro
+> bundled successfully with no red screen or unhandled Promise rejection.
 
 使用无该项目 SecureStore 数据的 Simulator：
 
