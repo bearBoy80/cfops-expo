@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ArrowRight, Check, Sparkles } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../theme/ThemeContext';
 import { accent, label, tint } from '../theme/tokens';
 import {
@@ -13,6 +14,7 @@ export function DoneStep({
 }: {
   onEnterConsole: () => Promise<void>;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   const { mode, colors } = useTheme();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +29,7 @@ export function DoneStep({
     try {
       await onEnterConsole();
     } catch {
-      setError('Could not finish setup. Try again.');
+      setError(t('onboarding.done.finishFailed'));
     } finally {
       setBusy(false);
     }
@@ -53,11 +55,10 @@ export function DoneStep({
           />
         </View>
         <Text style={[styles.title, { color: colors.text }]}>
-          You&apos;re all set
+          {t('onboarding.done.title')}
         </Text>
         <Text style={[styles.subtitle, { color: label(mode, 0.55) }]}>
-          Your console is ready. Bind your first Cloudflare account anytime
-          from More → Connected Accounts.
+          {t('onboarding.done.subtitle')}
         </Text>
         <View style={styles.tagline}>
           <Sparkles
@@ -66,7 +67,7 @@ export function DoneStep({
             size={15}
           />
           <Text style={[styles.taglineText, { color: label(mode, 0.5) }]}>
-            Managing everything from one place
+            {t('onboarding.done.tagline')}
           </Text>
         </View>
       </View>
@@ -81,7 +82,7 @@ export function DoneStep({
         <OnboardingPrimaryButton
           Icon={ArrowRight}
           busy={busy}
-          label="Enter Console"
+          label={t('onboarding.done.cta')}
           onPress={() => {
             void enterConsole();
           }}

@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../src/auth/AuthGate';
 import {
   advanceOnboarding,
@@ -25,6 +26,7 @@ import { WelcomeStep } from '../../src/onboarding/WelcomeStep';
 import { useTheme } from '../../src/theme/ThemeContext';
 
 export default function Onboarding() {
+  const { t } = useTranslation();
   const {
     lock,
     onOnboardingCompleted,
@@ -114,7 +116,7 @@ export default function Onboarding() {
       >
         {loading ? (
           <View
-            accessibilityLabel="Loading onboarding progress"
+            accessibilityLabel={t('onboarding.loadingA11y')}
             accessibilityRole="progressbar"
             style={styles.loading}
             testID="onboarding-loading"

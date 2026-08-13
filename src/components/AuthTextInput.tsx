@@ -7,6 +7,7 @@ import {
   type TextInputProps,
 } from 'react-native';
 import { Eye, EyeOff } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../theme/ThemeContext';
 import { accent, hairline, label } from '../theme/tokens';
 
@@ -35,6 +36,7 @@ export function AuthTextInput({
   testID,
   textContentType,
 }: AuthTextInputProps) {
+  const { t } = useTranslation();
   const { mode, colors } = useTheme();
   const [focused, setFocused] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -72,7 +74,11 @@ export function AuthTextInput({
       />
       {showPasswordToggle ? (
         <Pressable
-          accessibilityLabel={passwordVisible ? 'Hide password' : 'Show password'}
+          accessibilityLabel={
+            passwordVisible
+              ? t('authInput.hidePassword')
+              : t('authInput.showPassword')
+          }
           accessibilityRole="button"
           disabled={disabled}
           hitSlop={10}

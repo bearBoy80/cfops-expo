@@ -1,9 +1,12 @@
 import '../global.css';
 
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthGateProvider, useAuth } from '../src/auth/AuthGate';
 import { routeGuards } from '../src/auth/routeGuards';
+import { ToastProvider } from '../src/components/ui';
+import { applyStoredLanguage } from '../src/i18n';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 
 function AuthenticatedStack() {
@@ -41,11 +44,19 @@ function AuthenticatedStack() {
 }
 
 export default function RootLayout() {
+  // The i18n instance boots with the device language at import time; the
+  // stored manual override (if any) is applied here, during the loading gate.
+  useEffect(() => {
+    void applyStoredLanguage();
+  }, []);
+
   return (
     <ThemeProvider>
-      <AuthGateProvider>
-        <AuthenticatedStack />
-      </AuthGateProvider>
+      <ToastProvider>
+        <AuthGateProvider>
+          <AuthenticatedStack />
+        </AuthGateProvider>
+      </ToastProvider>
     </ThemeProvider>
   );
 }

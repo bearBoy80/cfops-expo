@@ -46,11 +46,21 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "cloudflareOauth": {
+        "clientId": "",
+        "scopes": [
+          "account.read",
+          "offline_access"
+        ]
+      }
     }
   }
 }

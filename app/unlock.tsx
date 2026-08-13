@@ -14,11 +14,12 @@ import {
 import * as LocalAuthentication from 'expo-local-authentication';
 import { LockKeyhole, ScanFace } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../src/auth/AuthGate';
 import { getAccount, verifyPassword } from '../src/auth/localAccount';
 import { AuthTextInput } from '../src/components/AuthTextInput';
 import { useTheme } from '../src/theme/ThemeContext';
-import { accent, label, palettes, tint } from '../src/theme/tokens';
+import { accent, foreground, label, tint } from '../src/theme/tokens';
 
 type AuthMode = 'password' | 'biometric' | null;
 
@@ -44,6 +45,7 @@ const isBiometricCancellation = (error: unknown) => {
 };
 
 export default function Unlock() {
+  const { t } = useTranslation();
   const { reportAccountError, unlock } = useAuth();
   const { mode, colors } = useTheme();
   const [name, setName] = useState('');
@@ -81,9 +83,7 @@ export default function Unlock() {
         }
         if (!hasHardware) {
           if (isMounted.current) {
-            setError(
-              'Biometric authentication is not available on this device. Use your password.',
-            );
+            setError(t('unlock.biometricUnavailableDevice'));
           }
           return;
         }
@@ -95,19 +95,17 @@ export default function Unlock() {
         }
         if (!isEnrolled) {
           if (isMounted.current) {
-            setError(
-              'Set up Face ID or fingerprint in device settings, then try again.',
-            );
+            setError(t('unlock.biometricNotEnrolled'));
           }
           return;
         }
 
         const result = await LocalAuthentication.authenticateAsync({
           biometricsSecurityLevel: 'strong',
-          cancelLabel: 'Use password',
+          cancelLabel: t('unlock.usePassword'),
           disableDeviceFallback: true,
-          fallbackLabel: 'Use password',
-          promptMessage: 'Unlock cloudflareOps',
+          fallbackLabel: t('unlock.usePassword'),
+          promptMessage: t('unlock.prompt'),
         });
         if (
           result.success &&
@@ -125,8 +123,8 @@ export default function Unlock() {
         ) {
           setError(
             result.error === 'authentication_failed'
-              ? 'Face ID or fingerprint was not recognized. Try again or use your password.'
-              : 'Biometric authentication is unavailable. Use your password.',
+              ? t('unlock.biometricNotRecognized')
+              : t('unlock.biometricUnavailable'),
           );
         }
       } catch (error) {
@@ -135,7 +133,7 @@ export default function Unlock() {
           isMounted.current &&
           !isBiometricCancellation(error)
         ) {
-          setError('Biometric authentication is unavailable. Use your password.');
+          setError(t('unlock.biometricUnavailable'));
         }
       } finally {
         if (biometricFlight.current === flight) {
@@ -193,7 +191,7 @@ export default function Unlock() {
       return passwordFlight.current ?? Promise.resolve();
     }
     if (!password) {
-      setError('Enter your password.');
+      setError(t('unlock.enterPassword'));
       return Promise.resolve();
     }
 
@@ -214,7 +212,7 @@ export default function Unlock() {
           return;
         }
         if (isMounted.current) {
-          setError('Incorrect password.');
+          setError(t('unlock.incorrectPassword'));
         }
       })
       .catch(() => {
@@ -261,10 +259,12 @@ export default function Unlock() {
         </View>
 
         <Text style={[styles.title, { color: colors.text }]}>
-          {name ? `Welcome back, ${name}` : 'Welcome back'}
+          {name
+            ? t('unlock.welcomeBackName', { name })
+            : t('unlock.welcomeBack')}
         </Text>
         <Text style={[styles.subtitle, { color: label(mode, 0.52) }]}>
-          Unlock your local Cloudflare console.
+          {t('unlock.subtitle')}
         </Text>
 
         <View style={styles.form}>
@@ -272,7 +272,7 @@ export default function Unlock() {
             disabled={authBusy}
             onChangeText={changePassword}
             onSubmitEditing={() => void submit()}
-            placeholder="Password"
+            placeholder={t('unlock.passwordPlaceholder')}
             returnKeyType="go"
             secureTextEntry
             showPasswordToggle
@@ -290,7 +290,9 @@ export default function Unlock() {
           <TouchableOpacity
             activeOpacity={0.8}
             accessibilityLabel={
-              authMode === 'password' ? 'Unlocking…' : 'Unlock'
+              authMode === 'password'
+                ? t('unlock.unlocking')
+                : t('unlock.unlock')
             }
             accessibilityRole="button"
             accessibilityState={{
@@ -307,24 +309,24 @@ export default function Unlock() {
           >
             {authMode === 'password' ? (
               <>
-                <ActivityIndicator color={palettes.dark.text} size="small" />
+                <ActivityIndicator color={foreground.onAccent} size="small" />
                 <Text
                   style={[
                     styles.primaryButtonText,
-                    { color: palettes.dark.text },
+                    { color: foreground.onAccent },
                   ]}
                 >
-                  Unlocking…
+                  {t('unlock.unlocking')}
                 </Text>
               </>
             ) : (
               <Text
                 style={[
                   styles.primaryButtonText,
-                  { color: palettes.dark.text },
+                  { color: foreground.onAccent },
                 ]}
               >
-                Unlock
+                {t('unlock.unlock')}
               </Text>
             )}
           </TouchableOpacity>
@@ -349,8 +351,8 @@ export default function Unlock() {
               style={[styles.biometricText, { color: label(mode, 0.65) }]}
             >
               {authMode === 'biometric'
-                ? 'Authenticating…'
-                : 'Use Face ID / fingerprint'}
+                ? t('unlock.authenticating')
+                : t('unlock.useBiometrics')}
             </Text>
           </Pressable>
         ) : null}

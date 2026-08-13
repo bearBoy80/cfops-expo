@@ -8,6 +8,7 @@ import {
   type KeyboardTypeOptions,
 } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../theme/ThemeContext';
 import {
   accent,
@@ -23,12 +24,16 @@ export function OnboardingStepDots({
 }: {
   step: OnboardingStep;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   const { mode } = useTheme();
   const activeIndex = onboardingSteps.indexOf(step);
 
   return (
     <View
-      accessibilityLabel={`Onboarding step ${activeIndex + 1} of ${onboardingSteps.length}`}
+      accessibilityLabel={t('onboarding.stepA11y', {
+        current: activeIndex + 1,
+        total: onboardingSteps.length,
+      })}
       accessibilityRole="progressbar"
       accessibilityValue={{
         max: onboardingSteps.length,

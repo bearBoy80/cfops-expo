@@ -19,7 +19,8 @@ export type AuthStatus =
 
 interface AuthValue {
   status: AuthStatus;
-  errorMessage: string | null;
+  /** i18n resource key describing the account error, translated at display. */
+  errorKey: string | null;
   unlock: () => void;
   lock: () => void;
   onOnboardingCompleted: () => void;
@@ -35,8 +36,11 @@ export function AuthGateProvider({
   children: React.ReactNode;
 }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const isForeground = useRef(true);
+  const [errorKey, setErrorKey] = useState<string | null>(null);
+  // iOS prewarming can start the process while backgrounded, so derive the
+  // initial foreground state instead of assuming `true`. `currentState` may
+  // still be null this early, which we treat as foreground.
+  const isForeground = useRef(AppState.currentState !== 'background');
 
   useEffect(() => {
     let active = true;
@@ -55,9 +59,7 @@ export function AuthGateProvider({
       })
       .catch(() => {
         if (active) {
-          setErrorMessage(
-            'The local account could not be read. Reset it to continue.',
-          );
+          setErrorKey('errors.account-unreadable');
           setStatus('error');
         }
       });
@@ -83,39 +85,35 @@ export function AuthGateProvider({
   const value = useMemo<AuthValue>(
     () => ({
       status,
-      errorMessage,
+      errorKey,
       unlock: () => {
         if (!isForeground.current) {
           return;
         }
-        setErrorMessage(null);
+        setErrorKey(null);
         setStatus('unlocked');
       },
       lock: () => setStatus('locked'),
       onOnboardingCompleted: () => {
-        setErrorMessage(null);
+        setErrorKey(null);
         setStatus(isForeground.current ? 'unlocked' : 'locked');
       },
       reportAccountError: () => {
-        setErrorMessage(
-          'The local account could not be read. Reset it to continue.',
-        );
+        setErrorKey('errors.account-unreadable');
         setStatus('error');
       },
       resetAccount: async () => {
         try {
           await deleteAccount();
-          setErrorMessage(null);
+          setErrorKey(null);
           setStatus('no-account');
         } catch {
-          setErrorMessage(
-            'The local account could not be reset. Please try again.',
-          );
+          setErrorKey('errors.account-reset-failed');
           setStatus('error');
         }
       },
     }),
-    [errorMessage, status],
+    [errorKey, status],
   );
 
   return (

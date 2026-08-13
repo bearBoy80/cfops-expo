@@ -176,7 +176,7 @@ test('surfaces corrupt storage and supports an explicit local reset', async () =
   const { result } = renderHook(() => useAuth(), { wrapper });
 
   await waitFor(() => expect(result.current.status).toBe('error'));
-  expect(result.current.errorMessage).toBeTruthy();
+  expect(result.current.errorKey).toBeTruthy();
 
   await act(async () => result.current.resetAccount());
 

@@ -1,12 +1,14 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ShieldAlert } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../src/auth/AuthGate';
 import { useTheme } from '../src/theme/ThemeContext';
-import { accent, label, palettes, tint } from '../src/theme/tokens';
+import { accent, foreground, label, tint } from '../src/theme/tokens';
 
 export default function AccountError() {
-  const { errorMessage, resetAccount } = useAuth();
+  const { t } = useTranslation();
+  const { errorKey, resetAccount } = useAuth();
   const { colors, mode } = useTheme();
 
   return (
@@ -21,22 +23,22 @@ export default function AccountError() {
           <ShieldAlert color={accent.red} size={34} />
         </View>
         <Text style={[styles.title, { color: colors.text }]}>
-          Local account unavailable
+          {t('accountError.title')}
         </Text>
         <Text style={[styles.message, { color: label(mode, 0.55) }]}>
-          {errorMessage}
+          {errorKey ? t(errorKey) : null}
         </Text>
         <Pressable
           accessibilityRole="button"
           onPress={() => void resetAccount()}
           style={[styles.button, { backgroundColor: accent.red }]}
         >
-          <Text style={[styles.buttonText, { color: palettes.dark.text }]}>
-            Reset Local Account
+          <Text style={[styles.buttonText, { color: foreground.onAccent }]}>
+            {t('accountError.reset')}
           </Text>
         </Pressable>
         <Text style={[styles.warning, { color: label(mode, 0.42) }]}>
-          This removes only the app login on this device.
+          {t('accountError.warning')}
         </Text>
       </View>
     </SafeAreaView>

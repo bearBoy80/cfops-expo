@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   User,
 } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { createOnboardingAccount } from '../auth/localAccount';
 import { useTheme } from '../theme/ThemeContext';
 import { accent, label, tint } from '../theme/tokens';
@@ -46,6 +47,7 @@ export function CreateAccountStep({
   onCreated: () => void;
   onDraftChange: (update: Partial<CreateAccountDraft>) => void;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   const { mode, colors } = useTheme();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +92,7 @@ export function CreateAccountStep({
       );
       onCreated();
     } catch {
-      setError('Could not create the local account. Try again.');
+      setError(t('onboarding.create.createFailed'));
     } finally {
       setBusy(false);
     }
@@ -104,11 +106,10 @@ export function CreateAccountStep({
     >
       <View>
         <Text style={[styles.title, { color: colors.text }]}>
-          Create your account
+          {t('onboarding.create.title')}
         </Text>
         <Text style={[styles.subtitle, { color: label(mode, 0.55) }]}>
-          This is your console account — the workspace you&apos;ll use to bind
-          and manage your Cloudflare accounts.
+          {t('onboarding.create.subtitle')}
         </Text>
       </View>
 
@@ -116,14 +117,14 @@ export function CreateAccountStep({
         <OnboardingField
           Icon={Building2}
           onChangeText={(value) => onDraftChange({ organization: value })}
-          placeholder="Organization / team name"
+          placeholder={t('onboarding.create.organizationPlaceholder')}
           testID="organization"
           value={organization}
         />
         <OnboardingField
           Icon={User}
           onChangeText={(value) => onDraftChange({ name: value })}
-          placeholder="Your full name"
+          placeholder={t('onboarding.create.namePlaceholder')}
           testID="name"
           value={name}
         />
@@ -132,13 +133,13 @@ export function CreateAccountStep({
             Icon={Mail}
             keyboardType="email-address"
             onChangeText={(value) => onDraftChange({ email: value })}
-            placeholder="Work email"
+            placeholder={t('onboarding.create.emailPlaceholder')}
             testID="email"
             value={email}
           />
           {trimmedEmail.length > 0 && !emailValid ? (
             <Text accessibilityRole="alert" style={styles.validationError}>
-              Enter a valid work email.
+              {t('onboarding.create.emailInvalid')}
             </Text>
           ) : null}
         </View>
@@ -146,14 +147,14 @@ export function CreateAccountStep({
           <OnboardingField
             Icon={Lock}
             onChangeText={(value) => onDraftChange({ password: value })}
-            placeholder="Password (min 8 characters)"
+            placeholder={t('onboarding.create.passwordPlaceholder')}
             secureTextEntry
             testID="password"
             value={password}
           />
           {password.length > 0 && !passwordValid ? (
             <Text accessibilityRole="alert" style={styles.validationError}>
-              Password must be at least 8 characters.
+              {t('onboarding.create.passwordTooShort')}
             </Text>
           ) : null}
         </View>
@@ -161,14 +162,14 @@ export function CreateAccountStep({
           <OnboardingField
             Icon={Lock}
             onChangeText={(value) => onDraftChange({ confirm: value })}
-            placeholder="Confirm password"
+            placeholder={t('onboarding.create.confirmPlaceholder')}
             secureTextEntry
             testID="confirm"
             value={confirm}
           />
           {confirm.length > 0 && !confirmationValid ? (
             <Text accessibilityRole="alert" style={styles.validationError}>
-              Passwords do not match.
+              {t('onboarding.create.passwordMismatch')}
             </Text>
           ) : null}
         </View>
@@ -179,7 +180,7 @@ export function CreateAccountStep({
       >
         <View style={styles.preferenceCopy}>
           <Text style={[styles.preferenceTitle, { color: colors.text }]}>
-            Face ID / fingerprint
+            {t('onboarding.create.biometricsTitle')}
           </Text>
           <Text
             style={[
@@ -187,11 +188,11 @@ export function CreateAccountStep({
               { color: label(mode, 0.5) },
             ]}
           >
-            Unlock faster on supported devices
+            {t('onboarding.create.biometricsSubtitle')}
           </Text>
         </View>
         <Switch
-          accessibilityLabel="Enable biometric unlock"
+          accessibilityLabel={t('onboarding.create.biometricsA11y')}
           disabled={busy}
           onValueChange={(value) =>
             onDraftChange({ biometricsEnabled: value })
@@ -214,8 +215,7 @@ export function CreateAccountStep({
           size={14}
         />
         <Text style={[styles.securityText, { color: label(mode, 0.45) }]}>
-          We never store your Cloudflare password — accounts are bound via
-          scoped API tokens.
+          {t('onboarding.create.securityNote')}
         </Text>
       </View>
 
@@ -223,7 +223,7 @@ export function CreateAccountStep({
       <View style={styles.footer}>
         {!formValid ? (
           <Text style={[styles.hint, { color: label(mode, 0.4) }]}>
-            Fill in all fields to continue
+            {t('onboarding.create.fillAll')}
           </Text>
         ) : null}
         {error ? (
@@ -236,7 +236,7 @@ export function CreateAccountStep({
           Icon={ArrowRight}
           busy={busy}
           disabled={!formValid}
-          label="Create Account"
+          label={t('onboarding.create.cta')}
           onPress={() => {
             void submit();
           }}
@@ -248,7 +248,7 @@ export function CreateAccountStep({
           style={styles.backButton}
         >
           <Text style={[styles.backText, { color: label(mode, 0.5) }]}>
-            Back
+            {t('common.back')}
           </Text>
         </Pressable>
       </View>

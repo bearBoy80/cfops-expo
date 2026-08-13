@@ -3,13 +3,15 @@ import {
   Activity,
   Database,
   Globe,
-  MoreHorizontal,
+  Settings,
   Zap,
 } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { accent, label } from '../../src/theme/tokens';
 
 export default function TabsLayout() {
+  const { t } = useTranslation();
   const { mode, colors } = useTheme();
 
   return (
@@ -28,7 +30,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="(home)"
         options={{
-          title: 'Home',
+          title: t('tabs.home'),
           tabBarIcon: ({ color, size }) => (
             <Activity color={color} size={size} />
           ),
@@ -37,14 +39,14 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="(zones)"
         options={{
-          title: 'Zones',
+          title: t('tabs.zones'),
           tabBarIcon: ({ color, size }) => <Globe color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="(storage)"
         options={{
-          title: 'Storage',
+          title: t('tabs.storage'),
           tabBarIcon: ({ color, size }) => (
             <Database color={color} size={size} />
           ),
@@ -53,16 +55,16 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="(compute)"
         options={{
-          title: 'Compute',
+          title: t('tabs.compute'),
           tabBarIcon: ({ color, size }) => <Zap color={color} size={size} />,
         }}
       />
       <Tabs.Screen
-        name="(more)"
+        name="(settings)"
         options={{
-          title: 'More',
+          title: t('tabs.settings'),
           tabBarIcon: ({ color, size }) => (
-            <MoreHorizontal color={color} size={size} />
+            <Settings color={color} size={size} />
           ),
         }}
       />

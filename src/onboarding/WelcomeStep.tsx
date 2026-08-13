@@ -6,6 +6,7 @@ import {
   Cloud,
   Layers,
 } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../theme/ThemeContext';
 import { accent, foreground, label, tint } from '../theme/tokens';
 import {
@@ -14,21 +15,9 @@ import {
 } from './OnboardingControls';
 
 const features = [
-  {
-    Icon: Building2,
-    color: accent.orange,
-    text: "Create your team's console account",
-  },
-  {
-    Icon: Layers,
-    color: accent.blue,
-    text: 'Bind multiple Cloudflare accounts',
-  },
-  {
-    Icon: Activity,
-    color: accent.green,
-    text: 'Monitor & manage everything globally',
-  },
+  { Icon: Building2, color: accent.orange, key: 'onboarding.welcome.feature1' },
+  { Icon: Layers, color: accent.blue, key: 'onboarding.welcome.feature2' },
+  { Icon: Activity, color: accent.green, key: 'onboarding.welcome.feature3' },
 ];
 
 export function WelcomeStep({
@@ -36,6 +25,7 @@ export function WelcomeStep({
 }: {
   onContinue: () => void;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   const { mode, colors } = useTheme();
 
   return (
@@ -62,17 +52,16 @@ export function WelcomeStep({
         </View>
 
         <Text style={[styles.title, { color: colors.text }]}>
-          Cloudflare Console
+          {t('onboarding.welcome.title')}
         </Text>
         <Text style={[styles.subtitle, { color: label(mode, 0.55) }]}>
-          One place to manage every Cloudflare account you operate — zones,
-          Workers, storage and security, all in a single global view.
+          {t('onboarding.welcome.subtitle')}
         </Text>
 
         <View style={styles.features}>
-          {features.map(({ Icon, color, text }) => (
+          {features.map(({ Icon, color, key }) => (
             <View
-              key={text}
+              key={key}
               style={[styles.feature, { backgroundColor: colors.surface }]}
             >
               <View
@@ -88,7 +77,7 @@ export function WelcomeStep({
                 />
               </View>
               <Text style={[styles.featureText, { color: colors.text }]}>
-                {text}
+                {t(key)}
               </Text>
             </View>
           ))}
@@ -99,7 +88,7 @@ export function WelcomeStep({
         <OnboardingStepDots step="welcome" />
         <OnboardingPrimaryButton
           Icon={ArrowRight}
-          label="Get Started"
+          label={t('onboarding.welcome.cta')}
           onPress={onContinue}
         />
       </View>

@@ -8,15 +8,13 @@ import {
   View,
 } from 'react-native';
 import { ArrowRight, Cloud, KeyRound } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../theme/ThemeContext';
 import { accent, hairline, label, tint } from '../theme/tokens';
 import {
   OnboardingPrimaryButton,
   OnboardingStepDots,
 } from './OnboardingControls';
-
-const connectionNotice =
-  'Cloudflare connections arrive in the next milestone. Skip for now to continue.';
 
 export function ConnectStep({
   onBack,
@@ -25,6 +23,7 @@ export function ConnectStep({
   onBack: () => void;
   onSkip: () => Promise<void>;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   const { mode, colors } = useTheme();
   const [noticeVisible, setNoticeVisible] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -40,7 +39,7 @@ export function ConnectStep({
     try {
       await onSkip();
     } catch {
-      setError('Could not save onboarding progress. Try again.');
+      setError(t('onboarding.connect.saveFailed'));
     } finally {
       setBusy(false);
     }
@@ -58,10 +57,10 @@ export function ConnectStep({
     >
       <View>
         <Text style={[styles.title, { color: colors.text }]}>
-          Bind Cloudflare accounts
+          {t('onboarding.connect.title')}
         </Text>
         <Text style={[styles.subtitle, { color: label(mode, 0.55) }]}>
-          Authorize access to import the Cloudflare accounts you operate.
+          {t('onboarding.connect.subtitle')}
         </Text>
       </View>
 
@@ -69,16 +68,16 @@ export function ConnectStep({
         <ConnectionChoice
           Icon={Cloud}
           accentColor={accent.orange}
-          detail="OAuth · imports all your accounts"
+          detail={t('onboarding.connect.oauthDetail')}
           emphasized
-          label="Authorize with Cloudflare"
+          label={t('onboarding.connect.oauthLabel')}
           onPress={showNotice}
         />
         <ConnectionChoice
           Icon={KeyRound}
           accentColor={accent.blue}
-          detail="Paste a scoped token instead"
-          label="Use an API token"
+          detail={t('onboarding.connect.tokenDetail')}
+          label={t('onboarding.connect.tokenLabel')}
           onPress={showNotice}
         />
         {noticeVisible ? (
@@ -92,7 +91,7 @@ export function ConnectStep({
               },
             ]}
           >
-            {connectionNotice}
+            {t('onboarding.connect.notice')}
           </Text>
         ) : null}
       </View>
@@ -106,7 +105,7 @@ export function ConnectStep({
         <OnboardingStepDots step="connect" />
         <OnboardingPrimaryButton
           busy={busy}
-          label="Skip for now"
+          label={t('onboarding.connect.cta')}
           onPress={() => {
             void skip();
           }}
@@ -118,7 +117,7 @@ export function ConnectStep({
           style={styles.backButton}
         >
           <Text style={[styles.backText, { color: label(mode, 0.5) }]}>
-            Back
+            {t('common.back')}
           </Text>
         </Pressable>
       </View>
