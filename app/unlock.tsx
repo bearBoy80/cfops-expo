@@ -15,11 +15,11 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { LockKeyhole, ScanFace } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../src/auth/AuthGate';
-import { getAccount, verifyPassword } from '../src/auth/localAccount';
-import { AuthTextInput } from '../src/components/AuthTextInput';
-import { useTheme } from '../src/theme/ThemeContext';
-import { accent, foreground, label, tint } from '../src/theme/tokens';
+import { useAuth } from '@/src/auth/AuthGate';
+import { getAccount, verifyPassword } from '@/src/auth/localAccount';
+import { AuthTextInput } from '@/src/components/AuthTextInput';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, foreground, label, tint } from '@/src/theme/tokens';
 
 type AuthMode = 'password' | 'biometric' | null;
 

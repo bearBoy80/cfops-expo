@@ -12,18 +12,18 @@ import { Fingerprint, Globe, LogOut, Moon, Plus } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../../../src/auth/AuthGate';
-import { getStoredLanguage, type AppLanguage } from '../../../src/i18n';
+import { useAuth } from '@/src/auth/AuthGate';
+import { getStoredLanguage, type AppLanguage } from '@/src/i18n';
 import {
   getAccount,
   setBiometricsEnabled,
-} from '../../../src/auth/localAccount';
+} from '@/src/auth/localAccount';
 import {
   listConnections,
   removeConnection,
   type CloudflareConnection,
-} from '../../../src/cloudflare/connections';
-import { invalidateZonesSnapshot } from '../../../src/cloudflare/resources';
+} from '@/src/cloudflare/connections';
+import { invalidateZonesSnapshot } from '@/src/cloudflare/resources';
 import {
   AccountChip,
   Card,
@@ -31,9 +31,9 @@ import {
   ListRow,
   SectionLabel,
   ToggleRow,
-} from '../../../src/components/ui';
-import { useTheme } from '../../../src/theme/ThemeContext';
-import { accent, label, tint } from '../../../src/theme/tokens';
+} from '@/src/components/ui';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, label, tint } from '@/src/theme/tokens';
 
 const chipColors = [accent.orange, accent.blue, accent.green, accent.red];
 

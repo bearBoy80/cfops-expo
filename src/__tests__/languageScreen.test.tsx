@@ -4,7 +4,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react-native';
-import LanguageScreen from '../../app/(tabs)/(settings)/language';
+import LanguageScreen from '@/app/(tabs)/(settings)/language';
 import i18n, { setAppLanguage } from '../i18n';
 import { ThemeProvider } from '../theme/ThemeContext';
 

@@ -10,3 +10,9 @@ export { InitialsAvatar } from './InitialsAvatar';
 export { zonePillStatus } from './zoneStatus';
 export { AreaChart, type AreaChartPoint } from './AreaChart';
 export { ToastProvider, useToast } from './Toast';
+export { SegmentedControl, type Segment } from './SegmentedControl';
+export {
+  ActionMenuHost,
+  showActionMenu,
+  type ActionMenuItem,
+} from './actionMenu';

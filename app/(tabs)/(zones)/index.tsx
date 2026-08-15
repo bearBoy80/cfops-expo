@@ -16,7 +16,7 @@ import {
   fetchZonesSnapshot,
   type ZoneListItem,
   type ZonesSnapshot,
-} from '../../../src/cloudflare/resources';
+} from '@/src/cloudflare/resources';
 import {
   AccountChip,
   Card,
@@ -24,9 +24,9 @@ import {
   ListRow,
   Pill,
   zonePillStatus,
-} from '../../../src/components/ui';
-import { useTheme } from '../../../src/theme/ThemeContext';
-import { accent, label } from '../../../src/theme/tokens';
+} from '@/src/components/ui';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, label } from '@/src/theme/tokens';
 
 const chipColors = [accent.orange, accent.blue, accent.purple, accent.green];
 

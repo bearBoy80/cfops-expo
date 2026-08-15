@@ -1,10 +1,10 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react-native';
-import RootLayout from '../../../app/_layout';
+import RootLayout from '@/app/_layout';
 
 let mockThemeMode: 'dark' | 'light' = 'dark';
 
-jest.mock('../../../global.css', () => ({}));
+jest.mock('@/global.css', () => ({}));
 
 jest.mock('expo-router', () => {
   const React = require('react');

@@ -23,7 +23,7 @@ import {
   fetchZoneTraffic,
   invalidateAnalyticsSnapshot,
   type ZoneTraffic,
-} from '../../../../src/cloudflare/analytics';
+} from '@/src/cloudflare/analytics';
 import {
   CloudflareApiError,
   countDnsRecords,
@@ -33,13 +33,13 @@ import {
   purgeZoneCache,
   setZonePaused,
   type CfZone,
-} from '../../../../src/cloudflare/api';
-import { listConnections } from '../../../../src/cloudflare/connections';
+} from '@/src/cloudflare/api';
+import { listConnections } from '@/src/cloudflare/connections';
 import {
   getConnectionBearer,
   invalidateZonesSnapshot,
-} from '../../../../src/cloudflare/resources';
-import { cloudflareErrorMessage } from '../../../../src/i18n/errors';
+} from '@/src/cloudflare/resources';
+import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import {
   AccountChip,
   Card,
@@ -48,10 +48,10 @@ import {
   SectionLabel,
   useToast,
   zonePillStatus,
-} from '../../../../src/components/ui';
-import { useTheme } from '../../../../src/theme/ThemeContext';
-import { accent, foreground, label } from '../../../../src/theme/tokens';
-import { compactNumber } from '../../../../src/utils/format';
+} from '@/src/components/ui';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, foreground, label } from '@/src/theme/tokens';
+import { compactNumber } from '@/src/utils/format';
 
 const sslLabels: Record<string, string> = {
   off: 'Off',

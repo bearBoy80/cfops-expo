@@ -2,9 +2,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ShieldAlert } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../src/auth/AuthGate';
-import { useTheme } from '../src/theme/ThemeContext';
-import { accent, foreground, label, tint } from '../src/theme/tokens';
+import { useAuth } from '@/src/auth/AuthGate';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, foreground, label, tint } from '@/src/theme/tokens';
 
 export default function AccountError() {
   const { t } = useTranslation();

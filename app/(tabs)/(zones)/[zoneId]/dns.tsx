@@ -22,23 +22,23 @@ import {
   updateDnsRecord,
   type CfDnsRecord,
   type DnsRecordInput,
-} from '../../../../src/cloudflare/api';
+} from '@/src/cloudflare/api';
 import {
   validateDnsRecord,
   type DnsFieldErrors,
-} from '../../../../src/cloudflare/dnsValidation';
-import { getBearerForConnection } from '../../../../src/cloudflare/resources';
-import { ZoneSubpage } from '../../../../src/components/ZoneSubpage';
+} from '@/src/cloudflare/dnsValidation';
+import { getBearerForConnection } from '@/src/cloudflare/resources';
+import { ZoneSubpage } from '@/src/components/ZoneSubpage';
 import {
   Card,
   ListRow,
   SectionLabel,
   ToggleRow,
   useToast,
-} from '../../../../src/components/ui';
-import { cloudflareErrorMessage } from '../../../../src/i18n/errors';
-import { useTheme } from '../../../../src/theme/ThemeContext';
-import { accent, foreground, label, tint } from '../../../../src/theme/tokens';
+} from '@/src/components/ui';
+import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, foreground, label, tint } from '@/src/theme/tokens';
 
 const recordTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS'] as const;
 

@@ -5,19 +5,19 @@ import { useTranslation } from 'react-i18next';
 import {
   fetchZoneHourly,
   type ZoneHourlyAnalytics,
-} from '../../../../src/cloudflare/analytics';
-import { getBearerForConnection } from '../../../../src/cloudflare/resources';
-import { ZoneSubpage } from '../../../../src/components/ZoneSubpage';
+} from '@/src/cloudflare/analytics';
+import { getBearerForConnection } from '@/src/cloudflare/resources';
+import { ZoneSubpage } from '@/src/components/ZoneSubpage';
 import {
   AreaChart,
   Card,
   ListRow,
   SectionLabel,
-} from '../../../../src/components/ui';
-import { cloudflareErrorMessage } from '../../../../src/i18n/errors';
-import { useTheme } from '../../../../src/theme/ThemeContext';
-import { accent, label } from '../../../../src/theme/tokens';
-import { compactNumber } from '../../../../src/utils/format';
+} from '@/src/components/ui';
+import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, label } from '@/src/theme/tokens';
+import { compactNumber } from '@/src/utils/format';
 
 export default function ZoneAnalytics() {
   const { t } = useTranslation();
@@ -65,9 +65,10 @@ export default function ZoneAnalytics() {
           color: accent.red,
         },
         {
-          key: 'visitors',
-          label: t('analytics.uniqueVisitors'),
-          value: compactNumber(hourly.uniques),
+          key: 'visits',
+          label: t('analytics.eyeballVisits'),
+          value:
+            hourly.visits !== null ? compactNumber(hourly.visits) : '—',
           color: accent.green,
         },
       ]

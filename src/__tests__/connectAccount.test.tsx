@@ -4,7 +4,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react-native';
-import ConnectAccountScreen from '../../app/(tabs)/(settings)/connect';
+import ConnectAccountScreen from '@/app/(tabs)/(settings)/connect';
 import { CloudflareApiError } from '../cloudflare/api';
 import {
   addConnection,

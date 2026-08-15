@@ -1,6 +1,8 @@
 import {
   aggregateAnalytics,
   fetchAnalyticsSnapshot,
+  fetchStorageMetrics,
+  fetchWorkerMetrics,
   invalidateAnalyticsSnapshot,
   type AnalyticsSnapshot,
 } from '../analytics';
@@ -56,6 +58,14 @@ const graphqlPayload = {
               dimensions: { datetime: '2026-08-13T02:00:00Z' },
             },
           ],
+          httpRequests1dGroups: [
+            {
+              uniq: { uniques: 90 },
+              sum: { pageViews: 200 },
+              dimensions: { date: '2026-08-14' },
+            },
+          ],
+          httpRequestsAdaptiveGroups: [{ sum: { visits: 70 } }],
           firewallEventsAdaptive: [
             {
               action: 'block',
@@ -85,6 +95,17 @@ const setFetch = (mock: jest.Mock) => {
   return mock;
 };
 
+const queryOf = (init: { body?: string } | undefined): string => {
+  if (!init?.body) {
+    return '';
+  }
+  try {
+    return (JSON.parse(init.body) as { query?: string }).query ?? '';
+  } catch {
+    return '';
+  }
+};
+
 test('fetches zone analytics and firewall events over GraphQL', async () => {
   setFetch(
     jest.fn().mockResolvedValue({
@@ -103,6 +124,9 @@ test('fetches zone analytics and firewall events over GraphQL', async () => {
     threats: 6,
     bytes: 6144,
     cachedBytes: 3072,
+    uniques: 90,
+    visits: null,
+    pageViews: null,
   });
   expect(snapshot.events).toEqual([
     {
@@ -132,22 +156,72 @@ test('falls back to traffic-only query when firewall data is denied', async () =
     },
   };
   const mockFetch = setFetch(
-    jest
-      .fn()
-      .mockResolvedValueOnce({
-        json: () => Promise.resolve({ data: null, errors: [{}] }),
-      })
-      .mockResolvedValueOnce({
-        json: () => Promise.resolve(trafficOnly),
-      }),
+    jest.fn().mockImplementation(async (_url: string, init?: { body?: string }) => {
+      const query = queryOf(init);
+      if (query.includes('firewallEventsAdaptive')) {
+        return { json: () => Promise.resolve({ data: null, errors: [{}] }) };
+      }
+      return { json: () => Promise.resolve(trafficOnly) };
+    }),
   );
 
   const snapshot = await fetchAnalyticsSnapshot(zonesSnapshot);
 
-  expect(mockFetch).toHaveBeenCalledTimes(2);
+  expect(mockFetch).toHaveBeenCalled();
   expect(snapshot.available).toBe(true);
   expect(snapshot.zones[0].requests).toBe(400);
   expect(snapshot.events).toEqual([]);
+});
+
+test('overlays Web Analytics visits grouped by requestHost', async () => {
+  setFetch(
+    jest.fn().mockImplementation(async (_url: string, init?: { body?: string }) => {
+      const query = queryOf(init);
+      if (query.includes('rumPageloadEventsAdaptiveGroups')) {
+        return {
+          json: () =>
+            Promise.resolve({
+              data: {
+                viewer: {
+                  accounts: [
+                    {
+                      rumPageloadEventsAdaptiveGroups: [
+                        {
+                          count: 1800,
+                          sum: { visits: 1760 },
+                          dimensions: { requestHost: 'www.acme.com' },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            }),
+        };
+      }
+      return { json: () => Promise.resolve(graphqlPayload) };
+    }),
+  );
+
+  const snapshot = await fetchAnalyticsSnapshot(zonesSnapshot);
+
+  expect(snapshot.zones[0].visits).toBe(1760);
+  expect(snapshot.zones[0].pageViews).toBe(1800);
+  expect(snapshot.zones[0].uniques).toBe(90);
+});
+
+test('keeps HTTP uniques internal and leaves visits empty without RUM', async () => {
+  setFetch(
+    jest.fn().mockResolvedValue({
+      json: () => Promise.resolve(graphqlPayload),
+    }),
+  );
+
+  const snapshot = await fetchAnalyticsSnapshot(zonesSnapshot);
+
+  expect(snapshot.zones[0].uniques).toBe(90);
+  expect(snapshot.zones[0].visits).toBeNull();
+  expect(snapshot.zones[0].pageViews).toBeNull();
 });
 
 test('reports unavailable analytics when every connection fails', async () => {
@@ -174,6 +248,9 @@ test('aggregates totals and the hourly series, optionally per account', () => {
         threats: 6,
         bytes: 6144,
         cachedBytes: 3072,
+        uniques: 120,
+        visits: 70,
+        pageViews: 80,
         series: [
           { datetime: '2026-08-13T01:00:00Z', requests: 100 },
           { datetime: '2026-08-13T02:00:00Z', requests: 300 },
@@ -186,6 +263,9 @@ test('aggregates totals and the hourly series, optionally per account', () => {
         threats: 0,
         bytes: 100,
         cachedBytes: 10,
+        uniques: 12,
+        visits: 8,
+        pageViews: 10,
         series: [{ datetime: '2026-08-13T02:00:00Z', requests: 50 }],
       },
     ],
@@ -194,6 +274,8 @@ test('aggregates totals and the hourly series, optionally per account', () => {
 
   const all = aggregateAnalytics(snapshot);
   expect(all.requests).toBe(450);
+  expect(all.uniques).toBe(132);
+  expect(all.visits).toBe(78);
   expect(all.series).toEqual([
     { label: '01', value: 100 },
     { label: '02', value: 350 },
@@ -202,4 +284,130 @@ test('aggregates totals and the hourly series, optionally per account', () => {
   const scoped = aggregateAnalytics(snapshot, 'acc-2');
   expect(scoped.requests).toBe(50);
   expect(scoped.series).toEqual([{ label: '02', value: 50 }]);
+});
+
+test('fetchWorkerMetrics sums invocations per script', async () => {
+  setFetch(
+    jest.fn().mockResolvedValue({
+      json: () =>
+        Promise.resolve({
+          data: {
+            viewer: {
+              accounts: [
+                {
+                  workersInvocationsAdaptive: [
+                    {
+                      sum: { requests: 100, errors: 2 },
+                      quantiles: { cpuTimeP50: 3200 },
+                      dimensions: { scriptName: 'api-gateway' },
+                    },
+                    {
+                      sum: { requests: 50, errors: 0 },
+                      quantiles: { cpuTimeP50: 1000 },
+                      dimensions: { scriptName: 'api-gateway' },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        }),
+    }),
+  );
+
+  const metrics = await fetchWorkerMetrics('bearer-1', 'acc-1');
+
+  expect(metrics.get('api-gateway')).toEqual({
+    requests: 150,
+    errors: 2,
+    cpuP50Ms: 3.2,
+  });
+});
+
+test('fetchStorageMetrics collects R2, KV and D1 datasets independently', async () => {
+  const respond = (body: unknown) => ({
+    json: () => Promise.resolve(body),
+  });
+  const account = (fields: Record<string, unknown>) =>
+    respond({ data: { viewer: { accounts: [fields] } } });
+
+  setFetch(
+    jest.fn().mockImplementation((_url: string, init: { body: string }) => {
+      const query = (JSON.parse(init.body) as { query: string }).query;
+      if (query.includes('r2StorageAdaptiveGroups')) {
+        return Promise.resolve(
+          account({
+            r2StorageAdaptiveGroups: [
+              {
+                max: { objectCount: 12, payloadSize: 2048 },
+                dimensions: { bucketName: 'assets' },
+              },
+            ],
+          }),
+        );
+      }
+      if (query.includes('r2OperationsAdaptiveGroups')) {
+        return Promise.resolve(
+          account({
+            r2OperationsAdaptiveGroups: [
+              {
+                sum: { requests: 10 },
+                dimensions: { bucketName: 'assets', actionType: 'PutObject' },
+              },
+              {
+                sum: { requests: 90 },
+                dimensions: { bucketName: 'assets', actionType: 'GetObject' },
+              },
+            ],
+          }),
+        );
+      }
+      if (query.includes('kvStorageAdaptiveGroups')) {
+        return Promise.resolve(
+          account({
+            kvStorageAdaptiveGroups: [
+              {
+                max: { keyCount: 42, byteCount: 512 },
+                dimensions: { namespaceId: 'ns-1' },
+              },
+            ],
+          }),
+        );
+      }
+      if (query.includes('kvOperationsAdaptiveGroups')) {
+        return Promise.resolve(
+          account({
+            kvOperationsAdaptiveGroups: [
+              {
+                sum: { requests: 30 },
+                dimensions: { namespaceId: 'ns-1', actionType: 'read' },
+              },
+              {
+                sum: { requests: 5 },
+                dimensions: { namespaceId: 'ns-1', actionType: 'write' },
+              },
+            ],
+          }),
+        );
+      }
+      // D1 dataset fails: the rest must still be returned.
+      return Promise.resolve(respond({ data: null, errors: [{}] }));
+    }),
+  );
+
+  const metrics = await fetchStorageMetrics('bearer-1', 'acc-1');
+
+  expect(metrics.r2.get('assets')).toEqual({
+    objectCount: 12,
+    payloadSize: 2048,
+    classAOps: 10,
+    classBOps: 90,
+  });
+  expect(metrics.kv.get('ns-1')).toEqual({
+    keyCount: 42,
+    byteCount: 512,
+    reads: 30,
+    writes: 5,
+  });
+  expect(metrics.d1.size).toBe(0);
 });

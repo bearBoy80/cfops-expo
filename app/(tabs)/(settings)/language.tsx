@@ -8,10 +8,10 @@ import {
   getStoredLanguage,
   setAppLanguage,
   type AppLanguage,
-} from '../../../src/i18n';
-import { Card, ListRow } from '../../../src/components/ui';
-import { useTheme } from '../../../src/theme/ThemeContext';
-import { accent, label } from '../../../src/theme/tokens';
+} from '@/src/i18n';
+import { Card, ListRow } from '@/src/components/ui';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, label } from '@/src/theme/tokens';
 
 const options: AppLanguage[] = ['system', 'en', 'zh-Hans'];
 

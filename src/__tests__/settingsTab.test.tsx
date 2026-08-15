@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react-native';
-import SettingsScreen from '../../app/(tabs)/(settings)/index';
+import SettingsScreen from '@/app/(tabs)/(settings)/index';
 import type { LocalAccount } from '../auth/localAccount';
 import { getAccount, setBiometricsEnabled } from '../auth/localAccount';
 import {

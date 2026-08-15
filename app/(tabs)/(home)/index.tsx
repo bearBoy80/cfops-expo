@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import {
   Activity,
   BarChart2,
@@ -18,11 +18,13 @@ import {
   ChevronsUpDown,
   DollarSign,
   FileText,
+  Gauge,
   Globe,
   HardDrive,
   Layers,
   Server,
   Shield,
+  ShieldAlert,
   Wifi,
   Zap,
 } from 'lucide-react-native';
@@ -32,11 +34,11 @@ import {
   aggregateAnalytics,
   fetchAnalyticsSnapshot,
   type AnalyticsSnapshot,
-} from '../../../src/cloudflare/analytics';
+} from '@/src/cloudflare/analytics';
 import {
   fetchZonesSnapshot,
   type ZonesSnapshot,
-} from '../../../src/cloudflare/resources';
+} from '@/src/cloudflare/resources';
 import {
   AccountChip,
   AreaChart,
@@ -47,11 +49,11 @@ import {
   Pill,
   SectionLabel,
   type Status,
-} from '../../../src/components/ui';
-import { cloudflareErrorMessage } from '../../../src/i18n/errors';
-import { useTheme } from '../../../src/theme/ThemeContext';
-import { accent, foreground, label, tint } from '../../../src/theme/tokens';
-import { compactNumber, formatBytes } from '../../../src/utils/format';
+} from '@/src/components/ui';
+import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, foreground, label, tint } from '@/src/theme/tokens';
+import { compactNumber, formatBytes } from '@/src/utils/format';
 
 const chipColors = [accent.orange, accent.blue, accent.purple, accent.green];
 
@@ -207,10 +209,30 @@ export default function Home() {
       title: t('home.quickFirewall'),
       sub: aggregate
         ? t('home.quickFirewallSub', { count: compactNumber(aggregate.threats) })
-        : t('common.comingSoon'),
+        : t('home.quickFirewallSub', { count: '—' }),
       Icon: Shield,
       color: accent.red,
-      onPress: undefined,
+      onPress: () =>
+        router.push({
+          pathname: '/(tabs)/(home)/firewall',
+          params: scopedAccount
+            ? { accountId: scopedAccount.id }
+            : {},
+        } as unknown as Href),
+    },
+    {
+      key: 'underAttack',
+      title: t('home.quickUnderAttack'),
+      sub: t('home.quickUnderAttackSub'),
+      Icon: ShieldAlert,
+      color: accent.orange,
+      onPress: () =>
+        router.push({
+          pathname: '/(tabs)/(home)/under-attack',
+          params: scopedAccount
+            ? { accountId: scopedAccount.id }
+            : {},
+        } as unknown as Href),
     },
     {
       key: 'analytics',
@@ -218,16 +240,68 @@ export default function Home() {
       sub: t('home.quickAnalyticsSub'),
       Icon: BarChart2,
       color: accent.purple,
-      onPress: undefined,
+      onPress: () =>
+        router.push({
+          pathname: '/(tabs)/(home)/analytics',
+          params: scopedAccount
+            ? {
+                accountId: scopedAccount.id,
+                accountName: scopedAccount.name,
+              }
+            : {},
+        } as unknown as Href),
     },
   ];
 
+  const openScoped = (pathname: string) =>
+    router.push({
+      pathname,
+      params: scopedAccount
+        ? { accountId: scopedAccount.id, accountName: scopedAccount.name }
+        : {},
+    } as unknown as Href);
+
   const management = [
-    { key: 'alerts', title: t('home.mgmtAlerts'), sub: t('home.mgmtAlertsSub'), Icon: Bell, color: accent.red },
-    { key: 'analytics', title: t('home.quickAnalytics'), sub: t('home.mgmtAnalyticsSub'), Icon: BarChart2, color: accent.purple },
-    { key: 'lb', title: t('home.mgmtLb'), sub: t('home.mgmtLbSub'), Icon: Wifi, color: accent.blue },
-    { key: 'audit', title: t('home.mgmtAudit'), sub: t('home.mgmtAuditSub'), Icon: FileText, color: accent.gray },
-    { key: 'billing', title: t('home.mgmtBilling'), sub: t('home.mgmtBillingSub'), Icon: DollarSign, color: accent.green },
+    {
+      key: 'alerts',
+      title: t('home.mgmtAlerts'),
+      sub: t('home.mgmtAlertsSub'),
+      Icon: Bell,
+      color: accent.red,
+      onPress: () => openScoped('/(tabs)/(home)/alerts'),
+    },
+    {
+      key: 'analytics',
+      title: t('home.mgmtAnalytics'),
+      sub: t('home.mgmtAnalyticsSub'),
+      Icon: Gauge,
+      color: accent.purple,
+      onPress: () => openScoped('/(tabs)/(home)/performance'),
+    },
+    {
+      key: 'lb',
+      title: t('home.mgmtLb'),
+      sub: t('home.mgmtLbSub'),
+      Icon: Wifi,
+      color: accent.blue,
+      onPress: () => openScoped('/(tabs)/(home)/lb'),
+    },
+    {
+      key: 'audit',
+      title: t('home.mgmtAudit'),
+      sub: t('home.mgmtAuditSub'),
+      Icon: FileText,
+      color: accent.gray,
+      onPress: () => openScoped('/(tabs)/(home)/audit'),
+    },
+    {
+      key: 'billing',
+      title: t('home.mgmtBilling'),
+      sub: t('home.mgmtBillingSub'),
+      Icon: DollarSign,
+      color: accent.green,
+      onPress: () => openScoped('/(tabs)/(home)/billing'),
+    },
   ];
 
   return (
@@ -455,6 +529,7 @@ export default function Home() {
               key={item.key}
               last={index === quickAccess.length - 1}
               onPress={item.onPress}
+              testID={`home-quick-${item.key}`}
               left={
                 <View style={styles.accountRow}>
                   <View
@@ -491,6 +566,8 @@ export default function Home() {
             <ListRow
               key={item.key}
               last={index === management.length - 1}
+              onPress={'onPress' in item ? item.onPress : undefined}
+              testID={`home-mgmt-${item.key}`}
               left={
                 <View style={styles.accountRow}>
                   <View

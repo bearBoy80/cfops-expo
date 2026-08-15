@@ -40,7 +40,15 @@ export function getOauthConfig(): OauthConfig | null {
     scopes:
       Array.isArray(extra.scopes) && extra.scopes.length > 0
         ? extra.scopes
-        : ['account.read', 'offline_access'],
+        : [
+            'account.read',
+            'workers.read',
+            'workers_kv.read',
+            'workers_r2.read',
+            'd1.read',
+            'pages.read',
+            'offline_access',
+          ],
   };
 }
 

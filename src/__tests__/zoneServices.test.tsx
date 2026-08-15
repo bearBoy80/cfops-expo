@@ -5,9 +5,9 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react-native';
-import ZoneAnalytics from '../../app/(tabs)/(zones)/[zoneId]/analytics';
-import ZoneDns from '../../app/(tabs)/(zones)/[zoneId]/dns';
-import ZoneFirewall from '../../app/(tabs)/(zones)/[zoneId]/firewall';
+import ZoneAnalytics from '@/app/(tabs)/(zones)/[zoneId]/analytics';
+import ZoneDns from '@/app/(tabs)/(zones)/[zoneId]/dns';
+import ZoneFirewall from '@/app/(tabs)/(zones)/[zoneId]/firewall';
 import {
   fetchZoneFirewallEvents,
   fetchZoneHourly,
@@ -206,6 +206,7 @@ test('firewall page shows metrics and live events', async () => {
     threats: 24_800,
     cachedRequests: 100_000,
     uniques: 88_000,
+    visits: 42_000,
     cacheRatioPct: 20,
     series: [],
   });
@@ -226,6 +227,7 @@ test('analytics page shows request volume and breakdown', async () => {
     threats: 24_800,
     cachedRequests: 1_016_800_000,
     uniques: 8_400_000,
+    visits: 1_200_000,
     cacheRatioPct: 82,
     series: [
       { label: '00', value: 100 },
@@ -239,5 +241,5 @@ test('analytics page shows request volume and breakdown', async () => {
   expect(screen.getByText('Request Volume')).toBeTruthy();
   expect(screen.getByText('82%')).toBeTruthy();
   expect(screen.getByText('24.8K')).toBeTruthy();
-  expect(screen.getByText('8.4M')).toBeTruthy();
+  expect(screen.getByText('1.2M')).toBeTruthy();
 });

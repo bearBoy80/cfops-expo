@@ -14,22 +14,22 @@ import * as WebBrowser from 'expo-web-browser';
 import { Cloud, ChevronLeft, KeyRound, ShieldCheck } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { AuthTextInput } from '../../../src/components/AuthTextInput';
+import { AuthTextInput } from '@/src/components/AuthTextInput';
 import {
   addConnection,
   addOauthConnection,
-} from '../../../src/cloudflare/connections';
-import { invalidateZonesSnapshot } from '../../../src/cloudflare/resources';
+} from '@/src/cloudflare/connections';
+import { invalidateZonesSnapshot } from '@/src/cloudflare/resources';
 import {
   discovery,
   exchangeAuthorizationCode,
   fetchOauthIdentity,
   getOauthConfig,
   redirectUri,
-} from '../../../src/cloudflare/oauth';
-import { cloudflareErrorMessage } from '../../../src/i18n/errors';
-import { useTheme } from '../../../src/theme/ThemeContext';
-import { accent, foreground, hairline, label, tint } from '../../../src/theme/tokens';
+} from '@/src/cloudflare/oauth';
+import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, foreground, hairline, label, tint } from '@/src/theme/tokens';
 
 WebBrowser.maybeCompleteAuthSession();
 

@@ -6,9 +6,9 @@ import {
   getZoneSslMode,
   listCertificatePacks,
   type CfCertificatePack,
-} from '../../../../src/cloudflare/api';
-import { getBearerForConnection } from '../../../../src/cloudflare/resources';
-import { ZoneSubpage } from '../../../../src/components/ZoneSubpage';
+} from '@/src/cloudflare/api';
+import { getBearerForConnection } from '@/src/cloudflare/resources';
+import { ZoneSubpage } from '@/src/components/ZoneSubpage';
 import {
   Card,
   ListRow,
@@ -16,10 +16,10 @@ import {
   Pill,
   SectionLabel,
   type Status,
-} from '../../../../src/components/ui';
-import { cloudflareErrorMessage } from '../../../../src/i18n/errors';
-import { useTheme } from '../../../../src/theme/ThemeContext';
-import { accent, label } from '../../../../src/theme/tokens';
+} from '@/src/components/ui';
+import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, label } from '@/src/theme/tokens';
 
 const sslLabels: Record<string, string> = {
   off: 'Off',

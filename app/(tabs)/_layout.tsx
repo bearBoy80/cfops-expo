@@ -7,8 +7,8 @@ import {
   Zap,
 } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
-import { useTheme } from '../../src/theme/ThemeContext';
-import { accent, label } from '../../src/theme/tokens';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, label } from '@/src/theme/tokens';
 
 export default function TabsLayout() {
   const { t } = useTranslation();

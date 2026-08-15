@@ -7,11 +7,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { AlertCircle, CheckCircle2 } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
-import { accent } from '../../theme/tokens';
+import { accent, hairline } from '../../theme/tokens';
 
 export type ToastKind = 'success' | 'error';
 
@@ -26,7 +26,9 @@ export function useToast(): ToastContextValue {
   return useContext(ToastContext);
 }
 
-const VISIBLE_MS = 2800;
+// Errors carry longer messages and higher stakes, so they linger.
+const SUCCESS_VISIBLE_MS = 2400;
+const ERROR_VISIBLE_MS = 4500;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   // Read the context directly so the provider also works in environments
@@ -37,35 +39,50 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     left: 0,
     right: 0,
   };
-  const { colors } = useTheme();
+  const { mode, colors } = useTheme();
   const [toast, setToast] = useState<{ message: string; kind: ToastKind } | null>(null);
   const opacity = useRef(new Animated.Value(0)).current;
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const dismiss = useCallback(() => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    Animated.timing(opacity, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setToast(null);
+      }
+    });
+  }, [opacity]);
+
   const showToast = useCallback(
     (message: string, kind: ToastKind = 'success') => {
+      if (!message.trim()) {
+        return;
+      }
       if (hideTimer.current) {
         clearTimeout(hideTimer.current);
       }
       setToast({ message, kind });
-      Animated.timing(opacity, {
+      opacity.setValue(0);
+      Animated.spring(opacity, {
         toValue: 1,
-        duration: 180,
         useNativeDriver: true,
+        damping: 18,
+        stiffness: 260,
+        mass: 0.7,
       }).start();
-      hideTimer.current = setTimeout(() => {
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: 220,
-          useNativeDriver: true,
-        }).start(({ finished }) => {
-          if (finished) {
-            setToast(null);
-          }
-        });
-      }, VISIBLE_MS);
+      hideTimer.current = setTimeout(
+        dismiss,
+        kind === 'error' ? ERROR_VISIBLE_MS : SUCCESS_VISIBLE_MS,
+      );
     },
-    [opacity],
+    [dismiss, opacity],
   );
 
   const value = useMemo(() => ({ showToast }), [showToast]);
@@ -78,7 +95,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {toast ? (
         <Animated.View
           accessibilityLiveRegion="polite"
-          pointerEvents="none"
+          pointerEvents="box-none"
           style={[
             styles.wrap,
             {
@@ -88,19 +105,36 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 {
                   translateY: opacity.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [-8, 0],
+                    outputRange: [-16, 0],
+                  }),
+                },
+                {
+                  scale: opacity.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.95, 1],
                   }),
                 },
               ],
             },
           ]}
         >
-          <View style={[styles.toast, { backgroundColor: colors.surface2 }]}>
+          <Pressable
+            accessibilityRole="alert"
+            onPress={dismiss}
+            style={[
+              styles.toast,
+              {
+                backgroundColor: colors.surface2,
+                borderColor: hairline(mode, 0.16),
+              },
+            ]}
+            testID="toast"
+          >
             <Icon color={iconColor} size={18} />
-            <Text numberOfLines={2} style={[styles.text, { color: colors.text }]} testID="toast-message">
+            <Text numberOfLines={3} style={[styles.text, { color: colors.text }]} testID="toast-message">
               {toast.message}
             </Text>
-          </View>
+          </Pressable>
         </Animated.View>
       ) : null}
     </ToastContext.Provider>
@@ -116,16 +150,18 @@ const styles = StyleSheet.create({
   toast: {
     alignItems: 'center',
     borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
     elevation: 6,
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
     maxWidth: 360,
+    minHeight: 44,
     paddingHorizontal: 16,
     paddingVertical: 12,
     shadowColor: '#000',
-    shadowOffset: { height: 4, width: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
+    shadowOffset: { height: 6, width: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
   },
   wrap: {
     alignItems: 'center',

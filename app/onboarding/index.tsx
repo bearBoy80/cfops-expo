@@ -9,21 +9,21 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../../src/auth/AuthGate';
+import { useAuth } from '@/src/auth/AuthGate';
 import {
   advanceOnboarding,
   completeOnboarding,
   getAccount,
-} from '../../src/auth/localAccount';
-import { ConnectStep } from '../../src/onboarding/ConnectStep';
+} from '@/src/auth/localAccount';
+import { ConnectStep } from '@/src/onboarding/ConnectStep';
 import {
   CreateAccountStep,
   type CreateAccountDraft,
-} from '../../src/onboarding/CreateAccountStep';
-import { DoneStep } from '../../src/onboarding/DoneStep';
-import type { OnboardingStep } from '../../src/onboarding/types';
-import { WelcomeStep } from '../../src/onboarding/WelcomeStep';
-import { useTheme } from '../../src/theme/ThemeContext';
+} from '@/src/onboarding/CreateAccountStep';
+import { DoneStep } from '@/src/onboarding/DoneStep';
+import type { OnboardingStep } from '@/src/onboarding/types';
+import { WelcomeStep } from '@/src/onboarding/WelcomeStep';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 export default function Onboarding() {
   const { t } = useTranslation();

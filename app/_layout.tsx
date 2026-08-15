@@ -1,13 +1,14 @@
 import '../global.css';
 
 import { useEffect } from 'react';
+import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { AuthGateProvider, useAuth } from '../src/auth/AuthGate';
-import { routeGuards } from '../src/auth/routeGuards';
-import { ToastProvider } from '../src/components/ui';
-import { applyStoredLanguage } from '../src/i18n';
-import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
+import { AuthGateProvider, useAuth } from '@/src/auth/AuthGate';
+import { routeGuards } from '@/src/auth/routeGuards';
+import { ActionMenuHost, ToastProvider } from '@/src/components/ui';
+import { applyStoredLanguage } from '@/src/i18n';
+import { ThemeProvider, useTheme } from '@/src/theme/ThemeContext';
 
 function AuthenticatedStack() {
   const { status } = useAuth();
@@ -52,11 +53,21 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider>
+      <ThemedRoot />
+    </ThemeProvider>
+  );
+}
+
+function ThemedRoot() {
+  const { colors } = useTheme();
+  return (
+    <View style={{ backgroundColor: colors.bg, flex: 1 }}>
       <ToastProvider>
         <AuthGateProvider>
           <AuthenticatedStack />
         </AuthGateProvider>
+        <ActionMenuHost />
       </ToastProvider>
-    </ThemeProvider>
+    </View>
   );
 }

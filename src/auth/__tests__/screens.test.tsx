@@ -15,8 +15,8 @@ import {
   TouchableOpacity,
   type AppStateStatus,
 } from 'react-native';
-import Onboarding from '../../../app/onboarding';
-import Unlock from '../../../app/unlock';
+import Onboarding from '@/app/onboarding';
+import Unlock from '@/app/unlock';
 import { AuthGateProvider, useAuth } from '../AuthGate';
 import {
   advanceOnboarding,

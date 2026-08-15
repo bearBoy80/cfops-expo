@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react-native';
-import ZoneDetail from '../../app/(tabs)/(zones)/[zoneId]';
+import ZoneDetail from '@/app/(tabs)/(zones)/[zoneId]';
 import { fetchZoneTraffic } from '../cloudflare/analytics';
 import {
   countDnsRecords,

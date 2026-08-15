@@ -6,15 +6,15 @@ import { useTranslation } from 'react-i18next';
 import {
   fetchZoneTraffic,
   type ZoneTraffic,
-} from '../../../../src/cloudflare/analytics';
-import { purgeZoneCache } from '../../../../src/cloudflare/api';
-import { getBearerForConnection } from '../../../../src/cloudflare/resources';
-import { ZoneSubpage } from '../../../../src/components/ZoneSubpage';
-import { Card, ListRow, SectionLabel } from '../../../../src/components/ui';
-import { cloudflareErrorMessage } from '../../../../src/i18n/errors';
-import { useTheme } from '../../../../src/theme/ThemeContext';
-import { accent, label } from '../../../../src/theme/tokens';
-import { compactNumber, formatBytes } from '../../../../src/utils/format';
+} from '@/src/cloudflare/analytics';
+import { purgeZoneCache } from '@/src/cloudflare/api';
+import { getBearerForConnection } from '@/src/cloudflare/resources';
+import { ZoneSubpage } from '@/src/components/ZoneSubpage';
+import { Card, ListRow, SectionLabel } from '@/src/components/ui';
+import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, label } from '@/src/theme/tokens';
+import { compactNumber, formatBytes } from '@/src/utils/format';
 
 export default function ZoneCache() {
   const { t } = useTranslation();

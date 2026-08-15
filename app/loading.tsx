@@ -1,6 +1,6 @@
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { accent } from '../src/theme/tokens';
-import { useTheme } from '../src/theme/ThemeContext';
+import { accent } from '@/src/theme/tokens';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 export default function Loading() {
   const { colors } = useTheme();

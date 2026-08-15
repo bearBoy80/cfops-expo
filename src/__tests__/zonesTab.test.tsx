@@ -4,7 +4,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react-native';
-import Zones from '../../app/(tabs)/(zones)/index';
+import Zones from '@/app/(tabs)/(zones)/index';
 import { fetchZonesSnapshot } from '../cloudflare/resources';
 import type { ZonesSnapshot } from '../cloudflare/resources';
 import { zonePillStatus } from '../components/ui';

@@ -6,20 +6,20 @@ import {
   fetchZoneFirewallEvents,
   fetchZoneHourly,
   type ZoneFirewallEvent,
-} from '../../../../src/cloudflare/analytics';
-import { getBearerForConnection } from '../../../../src/cloudflare/resources';
-import { ZoneSubpage } from '../../../../src/components/ZoneSubpage';
+} from '@/src/cloudflare/analytics';
+import { getBearerForConnection } from '@/src/cloudflare/resources';
+import { ZoneSubpage } from '@/src/components/ZoneSubpage';
 import {
   Card,
   ListRow,
   MetricTile,
   Pill,
   type Status,
-} from '../../../../src/components/ui';
-import { cloudflareErrorMessage } from '../../../../src/i18n/errors';
-import { useTheme } from '../../../../src/theme/ThemeContext';
-import { accent, label } from '../../../../src/theme/tokens';
-import { compactNumber } from '../../../../src/utils/format';
+} from '@/src/components/ui';
+import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useTheme } from '@/src/theme/ThemeContext';
+import { accent, label } from '@/src/theme/tokens';
+import { compactNumber } from '@/src/utils/format';
 
 function eventPillStatus(action: string): Status {
   if (action.includes('challenge')) {

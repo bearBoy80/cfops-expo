@@ -42,7 +42,15 @@ describe('getOauthConfig', () => {
     mockExpoConfig.extra = { cloudflareOauth: { clientId: ' abc ' } };
     expect(getOauthConfig()).toEqual({
       clientId: 'abc',
-      scopes: ['account.read', 'offline_access'],
+      scopes: [
+        'account.read',
+        'workers.read',
+        'workers_kv.read',
+        'workers_r2.read',
+        'd1.read',
+        'pages.read',
+        'offline_access',
+      ],
     });
   });
 });

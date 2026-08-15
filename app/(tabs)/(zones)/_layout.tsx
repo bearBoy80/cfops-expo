@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { useTheme } from '../../../src/theme/ThemeContext';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 export default function ZonesLayout() {
   const { colors } = useTheme();

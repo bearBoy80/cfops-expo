@@ -4,7 +4,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react-native';
-import Home from '../../app/(tabs)/(home)/index';
+import Home from '@/app/(tabs)/(home)/index';
 import type { AnalyticsSnapshot } from '../cloudflare/analytics';
 import { fetchAnalyticsSnapshot } from '../cloudflare/analytics';
 import { CloudflareApiError } from '../cloudflare/api';
@@ -90,6 +90,9 @@ const analytics: AnalyticsSnapshot = {
       threats: 143_000,
       bytes: 22_500_000_000_000,
       cachedBytes: 18_900_000_000_000,
+      uniques: 8_400_000,
+      visits: 1_200_000,
+      pageViews: 1_400_000,
       series: [
         { datetime: '2026-08-13T00:00:00Z', requests: 14_200 },
         { datetime: '2026-08-13T01:00:00Z', requests: 9_800 },
@@ -236,4 +239,52 @@ test('navigates to tabs from quick access', async () => {
 
   fireEvent.press(screen.getByText('Workers'));
   expect(mockPush).toHaveBeenCalledWith('/(tabs)/(compute)');
+
+  fireEvent.press(screen.getByTestId('home-quick-firewall'));
+  expect(mockPush).toHaveBeenCalledWith({
+    pathname: '/(tabs)/(home)/firewall',
+    params: {},
+  });
+
+  fireEvent.press(screen.getByTestId('home-quick-analytics'));
+  expect(mockPush).toHaveBeenCalledWith({
+    pathname: '/(tabs)/(home)/analytics',
+    params: {},
+  });
+
+  fireEvent.press(screen.getByTestId('home-quick-underAttack'));
+  expect(mockPush).toHaveBeenCalledWith({
+    pathname: '/(tabs)/(home)/under-attack',
+    params: {},
+  });
+
+  fireEvent.press(screen.getByTestId('home-mgmt-analytics'));
+  expect(mockPush).toHaveBeenCalledWith({
+    pathname: '/(tabs)/(home)/performance',
+    params: {},
+  });
+
+  fireEvent.press(screen.getByTestId('home-mgmt-alerts'));
+  expect(mockPush).toHaveBeenCalledWith({
+    pathname: '/(tabs)/(home)/alerts',
+    params: {},
+  });
+
+  fireEvent.press(screen.getByTestId('home-mgmt-lb'));
+  expect(mockPush).toHaveBeenCalledWith({
+    pathname: '/(tabs)/(home)/lb',
+    params: {},
+  });
+
+  fireEvent.press(screen.getByTestId('home-mgmt-audit'));
+  expect(mockPush).toHaveBeenCalledWith({
+    pathname: '/(tabs)/(home)/audit',
+    params: {},
+  });
+
+  fireEvent.press(screen.getByTestId('home-mgmt-billing'));
+  expect(mockPush).toHaveBeenCalledWith({
+    pathname: '/(tabs)/(home)/billing',
+    params: {},
+  });
 });
