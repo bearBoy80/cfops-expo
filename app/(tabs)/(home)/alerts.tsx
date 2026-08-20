@@ -21,7 +21,7 @@ import { ZoneSubpage } from '@/src/components/ZoneSubpage';
 import { Card, ListRow, Pill, SectionLabel, InlineEmpty } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label, tint } from '@/src/theme/tokens';
+import { accent, fontFace, label, tint } from '@/src/theme/tokens';
 import { relativeTime } from '@/src/utils/format';
 
 function alertIcon(type: string): LucideIcon {
@@ -186,13 +186,12 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   sub: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 3,
   },
   title: {
+    ...fontFace('body', '500'),
     flexShrink: 1,
-    fontSize: 15,
-    fontWeight: '500',
   },
   titleRow: {
     alignItems: 'center',

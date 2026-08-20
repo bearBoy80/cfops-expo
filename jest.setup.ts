@@ -4,8 +4,8 @@ jest.mock('react-native-reanimated', () =>
   require('react-native-reanimated/mock'),
 );
 
-// Keep the real safe-area module (nativewind's interop wraps SafeAreaView),
-// but resolve insets to zero so the hook does not require a native provider.
+// Keep the real safe-area module, but resolve insets to zero so the hook does
+// not require a native provider.
 jest.mock('react-native-safe-area-context', () => {
   const actual = jest.requireActual('react-native-safe-area-context');
   return {

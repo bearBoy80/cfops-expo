@@ -114,6 +114,7 @@ beforeEach(() => {
       ['ns-1', { keyCount: 42, byteCount: 512, reads: 30, writes: 5 }],
     ]),
     d1: new Map([['db-1', { readQueries: 100, writeQueries: 20 }]]),
+    permissionDenied: false,
   });
 });
 
@@ -152,6 +153,23 @@ test('lists R2 buckets with metrics and opens the bucket detail', async () => {
       location: 'wnam',
     },
   });
+});
+
+test('explains a refused analytics scope instead of showing empty usage', async () => {
+  jest.mocked(fetchStorageMetrics).mockResolvedValue({
+    r2: new Map(),
+    kv: new Map(),
+    d1: new Map(),
+    permissionDenied: true,
+  });
+
+  wrap();
+
+  // Without the notice the buckets would render with "—" everywhere, which
+  // looks exactly like resources nobody is using.
+  await waitFor(() =>
+    expect(screen.getByText('Additional permission required')).toBeTruthy(),
+  );
 });
 
 test('switches to KV and opens the namespace detail', async () => {

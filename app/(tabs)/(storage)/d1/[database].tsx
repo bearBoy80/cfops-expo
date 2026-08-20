@@ -27,8 +27,9 @@ import {
   InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useSequencer } from '@/src/state/useSequencedLoad';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label } from '@/src/theme/tokens';
+import { accent, fontFace, label } from '@/src/theme/tokens';
 import { compactNumber, formatBytes, relativeTime } from '@/src/utils/format';
 
 export default function D1DatabaseDetail() {
@@ -51,36 +52,39 @@ export default function D1DatabaseDetail() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const sequence = useSequencer();
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const bearer = await getBearerForConnection(params.connectionId);
-      await Promise.all([
-        getD1Database(bearer, params.accountId, params.database)
-          .then((next) => {
-            setDetail(next);
-          })
-          .catch(() => {}),
-        listD1Tables(bearer, params.accountId, params.database)
-          .then((names) => {
-            setTables(names);
-          })
-          .catch(() => {
-            setTables([]);
-          }),
-        fetchStorageMetrics(bearer, params.accountId)
-          .then((accountMetrics) => {
-            setMetrics(accountMetrics.d1.get(params.database) ?? null);
-          })
-          .catch(() => {}),
-      ]);
-    } catch (cause) {
-      setError(cloudflareErrorMessage(cause));
-    } finally {
-      setLoading(false);
-    }
-  }, [params.accountId, params.connectionId, params.database]);
+  const load = useCallback(
+    () =>
+      sequence(async (ifCurrent) => {
+        ifCurrent(setError)(null);
+        try {
+          const bearer = await getBearerForConnection(params.connectionId);
+          await Promise.all([
+            getD1Database(bearer, params.accountId, params.database)
+              .then(ifCurrent(setDetail))
+              .catch(() => {}),
+            listD1Tables(bearer, params.accountId, params.database)
+              .then(ifCurrent(setTables))
+              .catch(() => {
+                ifCurrent(setTables)([]);
+              }),
+            fetchStorageMetrics(bearer, params.accountId)
+              .then((accountMetrics) => {
+                ifCurrent(setMetrics)(
+                  accountMetrics.d1.get(params.database) ?? null,
+                );
+              })
+              .catch(() => {}),
+          ]);
+        } catch (cause) {
+          ifCurrent(setError)(cloudflareErrorMessage(cause));
+        } finally {
+          ifCurrent(setLoading)(false);
+        }
+      }),
+    [params.accountId, params.connectionId, params.database, sequence],
+  );
 
   useEffect(() => {
     void load();
@@ -270,18 +274,18 @@ export default function D1DatabaseDetail() {
 
 const styles = StyleSheet.create({
   deleteLabel: {
+    ...fontFace('headline', '400'),
     color: accent.red,
-    fontSize: 17,
   },
   mono: {
+    ...fontFace('subhead'),
     fontFamily: 'Menlo',
-    fontSize: 13,
   },
   rowLabel: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   rowValue: {
-    fontSize: 15,
+    ...fontFace('body'),
   },
   tileRow: {
     flexDirection: 'row',

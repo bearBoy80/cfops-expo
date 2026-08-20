@@ -15,6 +15,7 @@ import { Icon } from '../../src/components/ui';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { accent, label, radius, tint } from '../../src/theme/tokens';
 import { haptics } from '../../src/utils/haptics';
+import { fontFace } from '@/src/theme/tokens';
 
 interface TabIconProps {
   focused: boolean;
@@ -178,8 +179,7 @@ const styles = StyleSheet.create({
     width: 50,
   },
   tabLabel: {
-    fontSize: 11,
-    fontWeight: '500',
+    ...fontFace('caption', '500'),
     // Clears the capsule without growing the bar: the icon box keeps its
     // height, only the label shifts down.
     marginTop: 2,

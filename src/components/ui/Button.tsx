@@ -57,9 +57,6 @@ export function Button({
         : accent.orange;
   const cornerRadius = variant === 'destructive' ? radius.lg : radius.full;
   const inactive = disabled || loading;
-  // Flatten any caller style into a plain object. Passing an array that mixes
-  // an inline object with a StyleSheet id into a Pressable's functional style
-  // trips nativewind's css-interop and silently drops the inline layout rules.
   const outerStyle = StyleSheet.flatten(style) ?? {};
 
   return (

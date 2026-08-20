@@ -2,6 +2,7 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -44,6 +45,7 @@ import {
   EmptyState,
   ListRow,
   MetricTile,
+  PermissionNotice,
   ScopeBanner,
   SearchField,
   SectionLabel,
@@ -60,7 +62,13 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useAccountScope } from '@/src/state/accountScope';
 import { haptics } from '@/src/utils/haptics';
 import { showResourceMenu } from '@/src/utils/resourceMenu';
-import { accent, foreground, label, tint } from '@/src/theme/tokens';
+import {
+  accent,
+  fontFace,
+  foreground,
+  label,
+  tint,
+} from '@/src/theme/tokens';
 import { compactNumber, formatBytes } from '@/src/utils/format';
 
 type StorageSegment = 'r2' | 'kv' | 'd1';
@@ -456,6 +464,13 @@ export default function Storage() {
     [d1Databases, needle],
   );
 
+  // Every account's metrics come back empty when the token cannot read
+  // analytics, which is indistinguishable from idle resources without this.
+  const metricsDenied = useMemo(
+    () => [...metrics.values()].some((entry) => entry.permissionDenied),
+    [metrics],
+  );
+
   const r2Totals = useMemo(() => {
     if (!snapshot) {
       return null;
@@ -754,6 +769,19 @@ export default function Storage() {
           {issue.label}: {cloudflareErrorMessage(issue.cause)}
         </Text>
       ))}
+
+      {metricsDenied ? (
+        <PermissionNotice
+          actionLabel={t('common.openApiTokens')}
+          message={t('storage.metricsNoPerm')}
+          onAction={() => {
+            void Linking.openURL(
+              'https://dash.cloudflare.com/profile/api-tokens',
+            );
+          }}
+          title={t('common.permissionRequired')}
+        />
+      ) : null}
 
       <View style={styles.segmentWrap}>
         <SegmentedControl
@@ -1086,19 +1114,18 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   creatorHint: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 12,
     paddingHorizontal: 16,
   },
   fieldError: {
+    ...fontFace('subhead'),
     color: accent.red,
-    fontSize: 13,
     marginTop: 6,
     paddingHorizontal: 16,
   },
   fieldLabel: {
-    fontSize: 12,
-    fontWeight: '500',
+    ...fontFace('footnote', '500'),
     marginBottom: 6,
     marginTop: 14,
     paddingHorizontal: 16,
@@ -1122,8 +1149,8 @@ const styles = StyleSheet.create({
     width: 30,
   },
   input: {
+    ...fontFace('headline', '400'),
     borderRadius: 10,
-    fontSize: 17,
     marginHorizontal: 16,
     minHeight: 44,
     paddingHorizontal: 12,
@@ -1134,21 +1161,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   issue: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     marginTop: 8,
     paddingHorizontal: 16,
   },
   mono: {
+    ...fontFace('bodySmall', '600'),
     fontFamily: 'Menlo',
-    fontSize: 14,
-    fontWeight: '600',
   },
   name: {
-    fontSize: 16,
-    fontWeight: '500',
+    ...fontFace('bodyLarge', '500'),
   },
   ops: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     fontVariant: ['tabular-nums'],
   },
   pill: {
@@ -1160,8 +1185,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   pillText: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...fontFace('body', '600'),
   },
   pills: {
     gap: 8,
@@ -1185,9 +1209,8 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   sheetAction: {
+    ...fontFace('headline'),
     color: accent.orange,
-    fontSize: 17,
-    fontWeight: '600',
   },
   sheetBackdrop: {
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -1198,8 +1221,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheetCancel: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   sheetHandle: {
     alignSelf: 'center',
@@ -1222,17 +1245,16 @@ const styles = StyleSheet.create({
     minWidth: 60,
   },
   sheetTitle: {
+    ...fontFace('headline'),
     flex: 1,
-    fontSize: 17,
-    fontWeight: '600',
     textAlign: 'center',
   },
   sub: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     marginTop: 2,
   },
   subtitle: {
-    fontSize: 15,
+    ...fontFace('body'),
     marginTop: 3,
   },
   tileRow: {
@@ -1242,9 +1264,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   title: {
-    fontSize: 34,
-    fontWeight: '700',
-    letterSpacing: 0.4,
+    ...fontFace('display'),
   },
   titleStandalone: {
     paddingHorizontal: 16,

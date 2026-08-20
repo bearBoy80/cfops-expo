@@ -34,7 +34,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useAccountScope } from '@/src/state/accountScope';
 import { haptics } from '@/src/utils/haptics';
 import { showResourceMenu } from '@/src/utils/resourceMenu';
-import { accent, label } from '@/src/theme/tokens';
+import { accent, fontFace, label } from '@/src/theme/tokens';
 
 const chipColors = [accent.orange, accent.blue, accent.purple, accent.green];
 
@@ -273,7 +273,7 @@ export default function Zones() {
 const styles = StyleSheet.create({
   content: {},
   noResults: {
-    fontSize: 15,
+    ...fontFace('body'),
     marginTop: 12,
     textAlign: 'center',
   },
@@ -292,19 +292,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   searchInput: {
+    ...fontFace('headline', '400'),
     flex: 1,
-    fontSize: 17,
     paddingVertical: 8,
   },
   subtitle: {
-    fontSize: 15,
+    ...fontFace('body'),
     marginTop: 3,
     paddingHorizontal: 16,
   },
   title: {
-    fontSize: 34,
-    fontWeight: '700',
-    letterSpacing: 0.4,
+    ...fontFace('display'),
     paddingHorizontal: 16,
     paddingTop: 12,
   },
@@ -313,9 +311,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   zoneName: {
+    ...fontFace('bodyLarge', '500'),
     flexShrink: 1,
-    fontSize: 16,
-    fontWeight: '500',
   },
   zoneRow: {
     alignItems: 'center',
@@ -323,7 +320,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   zoneSub: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     marginTop: 2,
   },
   zoneTitle: {

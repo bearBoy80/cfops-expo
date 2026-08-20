@@ -20,7 +20,7 @@ import {
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label } from '@/src/theme/tokens';
+import { accent, fontFace, label } from '@/src/theme/tokens';
 
 const sslLabels: Record<string, string> = {
   off: 'Off',
@@ -213,14 +213,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   days: {
-    fontSize: 13,
-    fontWeight: '600',
+    ...fontFace('subhead', '600'),
   },
   host: {
+    ...fontFace('bodySmall', '500'),
     flexShrink: 1,
     fontFamily: 'Menlo',
-    fontSize: 14,
-    fontWeight: '500',
   },
   hostRow: {
     alignItems: 'center',
@@ -228,13 +226,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   rowLabel: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   rowValue: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   sub: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 2,
   },
   tileRow: {

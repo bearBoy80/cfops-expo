@@ -1,3 +1,4 @@
+import { mapLimit } from '../../utils/concurrency';
 import { listConnections } from '../connections';
 import {
   getConnectionBearer,
@@ -6,6 +7,7 @@ import {
 } from '../resources';
 import { createTtlCache } from '../ttlCache';
 import {
+  QUERY_CONCURRENCY,
   ZONES_PER_QUERY,
   dailyUniques,
   runAccountQuery,
@@ -116,14 +118,12 @@ async function fetchConnectionAnalytics(
 
   const variables = { since, sinceDate: utcDateString() };
   const raw: RawZone[] = (
-    await Promise.all(
-      chunks.map(async (tags) => {
-        const vars = { tags, ...variables };
-        return runQuery(bearer, ANALYTICS_QUERY, vars)
-          .catch(() => runQuery(bearer, TRAFFIC_ONLY_QUERY, vars))
-          .catch(() => runQuery(bearer, ROLLUP_ONLY_QUERY, vars));
-      }),
-    )
+    await mapLimit(chunks, QUERY_CONCURRENCY, async (tags) => {
+      const vars = { tags, ...variables };
+      return runQuery(bearer, ANALYTICS_QUERY, vars)
+        .catch(() => runQuery(bearer, TRAFFIC_ONLY_QUERY, vars))
+        .catch(() => runQuery(bearer, ROLLUP_ONLY_QUERY, vars));
+    })
   ).flat();
 
   const analytics: ZoneAnalytics[] = [];
@@ -247,43 +247,41 @@ async function overlayWebAnalytics(
   const accountIds = [...new Set(zones.map((zone) => zone.accountId).filter(Boolean))];
   const byZoneId = new Map<string, { visits: number; pageViews: number }>();
 
-  await Promise.all(
-    accountIds.map(async (accountId) => {
-      try {
-        const groups = await fetchRumByHost(bearer, accountId, since);
-        const accountZones = zones.filter((zone) => zone.accountId === accountId);
-        for (const group of groups) {
-          const host = group.dimensions?.requestHost;
-          if (!host) {
-            continue;
-          }
-          // Assign each host to the most specific (longest) matching zone so a
-          // subdomain zone wins over its apex when both are connected.
-          let zone: ZoneListItem | null = null;
-          let bestScore = -1;
-          for (const item of accountZones) {
-            const score = zoneMatchScore(host, item.name);
-            if (score > bestScore) {
-              bestScore = score;
-              zone = item;
-            }
-          }
-          if (!zone) {
-            continue;
-          }
-          const current = byZoneId.get(zone.id);
-          byZoneId.set(zone.id, {
-            visits: (current?.visits ?? 0) + (group.sum?.visits ?? 0),
-            pageViews: (current?.pageViews ?? 0) + (group.count ?? 0),
-          });
+  await mapLimit(accountIds, QUERY_CONCURRENCY, async (accountId) => {
+    try {
+      const groups = await fetchRumByHost(bearer, accountId, since);
+      const accountZones = zones.filter((zone) => zone.accountId === accountId);
+      for (const group of groups) {
+        const host = group.dimensions?.requestHost;
+        if (!host) {
+          continue;
         }
-      } catch (cause) {
-        if (__DEV__) {
-          console.warn('[analytics] rum skipped for', accountId, cause);
+        // Assign each host to the most specific (longest) matching zone so a
+        // subdomain zone wins over its apex when both are connected.
+        let zone: ZoneListItem | null = null;
+        let bestScore = -1;
+        for (const item of accountZones) {
+          const score = zoneMatchScore(host, item.name);
+          if (score > bestScore) {
+            bestScore = score;
+            zone = item;
+          }
         }
+        if (!zone) {
+          continue;
+        }
+        const current = byZoneId.get(zone.id);
+        byZoneId.set(zone.id, {
+          visits: (current?.visits ?? 0) + (group.sum?.visits ?? 0),
+          pageViews: (current?.pageViews ?? 0) + (group.count ?? 0),
+        });
       }
-    }),
-  );
+    } catch (cause) {
+      if (__DEV__) {
+        console.warn('[analytics] rum skipped for', accountId, cause);
+      }
+    }
+  });
 
   for (const row of analytics) {
     const rum = byZoneId.get(row.zoneId);

@@ -57,8 +57,9 @@ import {
   InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useSequencer, type IfCurrent } from '@/src/state/useSequencedLoad';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, foreground, label } from '@/src/theme/tokens';
+import { accent, fontFace, foreground, label } from '@/src/theme/tokens';
 import { haptics } from '@/src/utils/haptics';
 import {
   compactNumber,
@@ -127,44 +128,67 @@ export default function R2BucketDetail() {
     zoneId: string;
   } | null>(null);
   const [domainError, setDomainError] = useState<string | null>(null);
+  const sequence = useSequencer();
 
-  const loadAccess = useCallback(async (resolved: string) => {
-    await Promise.all([
-      getR2ManagedDomain(resolved, params.accountId, params.bucket)
-        .then(setManaged)
-        .catch(() => {}),
-      listR2CustomDomains(resolved, params.accountId, params.bucket)
-        .then(setDomains)
-        .catch(() => setDomains([])),
-    ]);
-  }, [params.accountId, params.bucket]);
+  const loadAccess = useCallback(
+    async (resolved: string, ifCurrent: IfCurrent) => {
+      await Promise.all([
+        getR2ManagedDomain(resolved, params.accountId, params.bucket)
+          .then(ifCurrent(setManaged))
+          .catch(() => {}),
+        listR2CustomDomains(resolved, params.accountId, params.bucket)
+          .then(ifCurrent(setDomains))
+          .catch(() => ifCurrent(setDomains)([])),
+      ]);
+    },
+    [params.accountId, params.bucket],
+  );
 
-  const load = useCallback(async () => {
-    const resolved = await getBearerForConnection(params.connectionId);
-    setBearer(resolved);
-    await Promise.all([
-      listR2Objects(resolved, params.accountId, params.bucket)
-        .then(setObjects)
-        .catch(() => {
-          setObjects([]);
-        }),
-      fetchStorageMetrics(resolved, params.accountId)
-        .then((accountMetrics) =>
-          setMetrics(accountMetrics.r2.get(params.bucket) ?? null),
-        )
-        .catch(() => {}),
-      loadAccess(resolved),
-      fetchZonesSnapshot()
-        .then((snapshot) => {
-          setZones(
-            snapshot.zones
-              .filter((zone) => zone.accountId === params.accountId)
-              .map((zone) => ({ id: zone.id, name: zone.name })),
-          );
-        })
-        .catch(() => {}),
-    ]);
-  }, [loadAccess, params.accountId, params.bucket, params.connectionId]);
+  const load = useCallback(
+    () =>
+      sequence(async (ifCurrent) => {
+        const resolved = await getBearerForConnection(params.connectionId);
+        ifCurrent(setBearer)(resolved);
+        await Promise.all([
+          listR2Objects(resolved, params.accountId, params.bucket)
+            .then(ifCurrent(setObjects))
+            .catch(() => {
+              ifCurrent(setObjects)([]);
+            }),
+          fetchStorageMetrics(resolved, params.accountId)
+            .then((accountMetrics) =>
+              ifCurrent(setMetrics)(
+                accountMetrics.r2.get(params.bucket) ?? null,
+              ),
+            )
+            .catch(() => {}),
+          loadAccess(resolved, ifCurrent),
+          fetchZonesSnapshot()
+            .then((snapshot) => {
+              ifCurrent(setZones)(
+                snapshot.zones
+                  .filter((zone) => zone.accountId === params.accountId)
+                  .map((zone) => ({ id: zone.id, name: zone.name })),
+              );
+            })
+            .catch(() => {}),
+        ]);
+      }),
+    [
+      loadAccess,
+      params.accountId,
+      params.bucket,
+      params.connectionId,
+      sequence,
+    ],
+  );
+
+  /** Re-reads just the access settings after changing one of them. */
+  const reloadAccess = useCallback(
+    (resolved: string) =>
+      sequence((ifCurrent) => loadAccess(resolved, ifCurrent)),
+    [loadAccess, sequence],
+  );
 
   useEffect(() => {
     let active = true;
@@ -223,7 +247,7 @@ export default function R2BucketDetail() {
       .then(async () => {
         setDomainSheet(null);
         showToast(t('storage.domainAdded'));
-        await loadAccess(bearer);
+        await reloadAccess(bearer);
       })
       .catch((cause) => {
         setDomainError(cloudflareErrorMessage(cause));
@@ -253,7 +277,7 @@ export default function R2BucketDetail() {
             )
               .then(async () => {
                 showToast(t('storage.domainRemoved'));
-                await loadAccess(bearer);
+                await reloadAccess(bearer);
               })
               .catch((cause) => {
                 showToast(cloudflareErrorMessage(cause), 'error');
@@ -837,8 +861,8 @@ export default function R2BucketDetail() {
 
 const styles = StyleSheet.create({
   addRow: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   copy: {
     flex: 1,
@@ -853,8 +877,8 @@ const styles = StyleSheet.create({
     width: 22,
   },
   clearSelection: {
+    ...fontFace('bodyLarge'),
     color: accent.orange,
-    fontSize: 16,
   },
   /*
    * Both toolbar sides are text buttons, as iOS toolbars are. A filled
@@ -862,9 +886,8 @@ const styles = StyleSheet.create({
    * (#1c1c1e) and the toolbar is `tabbar` (#161618), so only the label showed.
    */
   toolbarDestructive: {
+    ...fontFace('bodyLarge', '600'),
     color: accent.red,
-    fontSize: 16,
-    fontWeight: '600',
   },
   objectToolbar: {
     alignItems: 'center',
@@ -880,36 +903,35 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   deleteLabel: {
+    ...fontFace('headline', '400'),
     color: accent.red,
-    fontSize: 17,
   },
   empty: {
-    fontSize: 14,
+    ...fontFace('bodySmall'),
     marginTop: 8,
     paddingHorizontal: 32,
     textAlign: 'center',
   },
   emptyZones: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     paddingHorizontal: 16,
   },
   fieldError: {
+    ...fontFace('subhead'),
     color: accent.red,
-    fontSize: 13,
     marginTop: 6,
     paddingHorizontal: 16,
   },
   fieldLabel: {
-    fontSize: 12,
-    fontWeight: '500',
+    ...fontFace('footnote', '500'),
     marginBottom: 6,
     marginTop: 14,
     paddingHorizontal: 16,
     textTransform: 'uppercase',
   },
   input: {
+    ...fontFace('headline', '400'),
     borderRadius: 10,
-    fontSize: 17,
     marginHorizontal: 16,
     minHeight: 44,
     paddingHorizontal: 12,
@@ -920,16 +942,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   mono: {
+    ...fontFace('subhead', '600'),
     fontFamily: 'Menlo',
-    fontSize: 13,
-    fontWeight: '600',
   },
   objectKey: {
+    ...fontFace('subhead'),
     fontFamily: 'Menlo',
-    fontSize: 13,
   },
   objectSub: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     fontVariant: ['tabular-nums'],
     marginTop: 2,
   },
@@ -942,18 +963,17 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   pillText: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...fontFace('body', '600'),
   },
   pills: {
     gap: 8,
     paddingHorizontal: 16,
   },
   rowLabel: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   rowValue: {
-    fontSize: 15,
+    ...fontFace('body'),
   },
   sheet: {
     borderTopLeftRadius: 20,
@@ -962,9 +982,8 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   sheetAction: {
+    ...fontFace('headline'),
     color: accent.orange,
-    fontSize: 17,
-    fontWeight: '600',
   },
   sheetBackdrop: {
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -975,8 +994,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheetCancel: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   sheetHandle: {
     alignSelf: 'center',
@@ -999,9 +1018,8 @@ const styles = StyleSheet.create({
     minWidth: 60,
   },
   sheetTitle: {
+    ...fontFace('headline'),
     flex: 1,
-    fontSize: 17,
-    fontWeight: '600',
     textAlign: 'center',
   },
   tileRow: {

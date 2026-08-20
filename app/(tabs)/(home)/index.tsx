@@ -60,7 +60,13 @@ import { CollapsibleTitleContainer, CompactHeader, useCollapsibleTitle } from '@
 import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { haptics } from '@/src/utils/haptics';
-import { accent, foreground, label, tint } from '@/src/theme/tokens';
+import {
+  accent,
+  fontFace,
+  foreground,
+  label,
+  tint,
+} from '@/src/theme/tokens';
 import { compactNumber, formatBytes } from '@/src/utils/format';
 
 const chipColors = [accent.orange, accent.blue, accent.purple, accent.green];
@@ -848,7 +854,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   accountBarCount: {
-    fontSize: 13,
+    ...fontFace('subhead'),
   },
   accountBarIcon: {
     alignItems: 'center',
@@ -859,8 +865,7 @@ const styles = StyleSheet.create({
     width: 30,
   },
   accountBarName: {
-    fontSize: 17,
-    fontWeight: '600',
+    ...fontFace('headline'),
   },
   accountCopy: {
     flex: 1,
@@ -872,9 +877,8 @@ const styles = StyleSheet.create({
     width: 6,
   },
   accountName: {
+    ...fontFace('bodyLarge', '500'),
     flexShrink: 1,
-    fontSize: 16,
-    fontWeight: '500',
   },
   accountNameRow: {
     alignItems: 'center',
@@ -882,10 +886,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   accountRequests: {
+    ...fontFace('body', '600'),
     color: accent.orange,
-    fontSize: 15,
     fontVariant: ['tabular-nums'],
-    fontWeight: '600',
   },
   accountRow: {
     alignItems: 'center',
@@ -893,7 +896,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   accountSub: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     marginTop: 2,
   },
   banner: {
@@ -912,12 +915,11 @@ const styles = StyleSheet.create({
     width: 8,
   },
   bannerText: {
+    ...fontFace('subhead', '500'),
     flex: 1,
-    fontSize: 13,
-    fontWeight: '500',
   },
   bannerTime: {
-    fontSize: 11,
+    ...fontFace('caption'),
   },
   chartCard: {
     borderRadius: 16,
@@ -926,17 +928,16 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   chartSub: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginBottom: 12,
     marginTop: 2,
   },
   chartTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...fontFace('body', '600'),
   },
   content: {},
   issue: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     marginTop: 6,
     paddingHorizontal: 20,
   },
@@ -969,13 +970,12 @@ const styles = StyleSheet.create({
     width: 36,
   },
   sheetTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...fontFace('body', '600'),
     marginBottom: 4,
     paddingHorizontal: 16,
   },
   subtitle: {
-    fontSize: 15,
+    ...fontFace('body'),
     marginTop: 3,
     paddingHorizontal: 16,
   },
@@ -986,9 +986,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   title: {
-    fontSize: 34,
-    fontWeight: '700',
-    letterSpacing: 0.4,
+    ...fontFace('display'),
     paddingHorizontal: 16,
     paddingTop: 4,
   },

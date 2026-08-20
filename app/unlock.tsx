@@ -18,7 +18,13 @@ import { useAuth } from '@/src/auth/AuthGate';
 import { getAccount, verifyPassword } from '@/src/auth/localAccount';
 import { AuthTextInput } from '@/src/components/AuthTextInput';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, foreground, label, tint } from '@/src/theme/tokens';
+import {
+  accent,
+  fontFace,
+  foreground,
+  label,
+  tint,
+} from '@/src/theme/tokens';
 
 type AuthMode = 'password' | 'biometric' | null;
 
@@ -384,8 +390,7 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   biometricText: {
-    fontSize: 14,
-    fontWeight: '500',
+    ...fontFace('bodySmall', '500'),
   },
   content: {
     alignSelf: 'center',
@@ -394,8 +399,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   error: {
+    ...fontFace('subhead'),
     color: accent.red,
-    fontSize: 13,
   },
   form: {
     gap: 12,
@@ -419,8 +424,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
+    ...fontFace('bodyLarge', '700'),
   },
   safeArea: {
     flex: 1,
@@ -433,14 +437,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   subtitle: {
-    fontSize: 14,
+    ...fontFace('bodySmall'),
     marginTop: 8,
     textAlign: 'center',
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: -0.5,
+    ...fontFace('largeTitle'),
     marginTop: 22,
     textAlign: 'center',
   },

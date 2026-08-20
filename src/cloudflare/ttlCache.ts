@@ -55,6 +55,15 @@ export function createKeyedTtlCache<
   return {
     get(key: K, options?: TtlCacheOptions, ...args: Args): Promise<T> {
       const now = Date.now();
+      // Drop expired entries rather than only overwriting the one being asked
+      // for: keys derived from data (a zone set, an account list) stop being
+      // requested when that data changes, and would otherwise be held for the
+      // lifetime of the process.
+      for (const [entryKey, entry] of entries) {
+        if (now - entry.at >= ttlMs && entryKey !== key) {
+          entries.delete(entryKey);
+        }
+      }
       const existing = entries.get(key);
       if (!options?.force && existing && now - existing.at < ttlMs) {
         return existing.promise;

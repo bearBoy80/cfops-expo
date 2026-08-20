@@ -1,4 +1,4 @@
-import { request } from './client';
+import { request, requestPaged } from './client';
 
 export interface CfZone {
   id: string;
@@ -35,8 +35,14 @@ function toZone(raw: RawZone): CfZone {
   };
 }
 
+/** Maximum the `/zones` endpoint accepts. */
+const ZONES_PER_PAGE = 50;
+
 export async function listZones(token: string): Promise<CfZone[]> {
-  const result = await request<RawZone[]>('/zones?per_page=50', token);
+  const result = await requestPaged<RawZone>(
+    (page) => `/zones?page=${page}&per_page=${ZONES_PER_PAGE}`,
+    token,
+  );
   return result.map(toZone);
 }
 

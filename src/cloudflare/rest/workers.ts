@@ -3,6 +3,7 @@ import {
   markLegacyListOptions,
   request,
   requestEnvelope,
+  requestPaged,
   usesLegacyListOptions,
 } from './client';
 
@@ -28,89 +29,39 @@ function toWorkerScript(script: RawWorkerScript): CfWorkerScript {
 }
 
 const SCRIPTS_PER_PAGE = 100;
-const SCRIPTS_MAX_PAGES = 20;
 
-async function listWorkerScriptsFast(
-  token: string,
-  accountId: string,
-): Promise<CfWorkerScript[]> {
-  const pagePath = (page: number) =>
-    `/accounts/${accountId}/workers/scripts?page=${page}&per_page=${SCRIPTS_PER_PAGE}`;
-  const first = await requestEnvelope<RawWorkerScript[]>(pagePath(1), token);
-  const scripts = first.result.map(toWorkerScript);
-
-  const info = first.result_info;
-  const totalPages =
-    info?.total_pages ??
-    (info?.total_count && first.result.length > 0
-      ? Math.ceil(info.total_count / first.result.length)
-      : 1);
-  const lastPage = Math.min(totalPages, SCRIPTS_MAX_PAGES);
-  if (lastPage > 1 && first.result.length > 0) {
-    // Remaining pages are independent once the first response reveals the
-    // page count, so fetch them in parallel.
-    const envelopes = await Promise.all(
-      Array.from({ length: lastPage - 1 }, (_, index) =>
-        requestEnvelope<RawWorkerScript[]>(pagePath(index + 2), token),
-      ),
-    );
-    for (const envelope of envelopes) {
-      scripts.push(...envelope.result.map(toWorkerScript));
-    }
-  }
-  return scripts;
-}
-
-/**
- * Fetch without list options for accounts that reject them. Only `per_page`
- * is refused; `page` still works, so after the first page reveals the total
- * the remaining pages load in parallel.
- */
-async function listWorkerScriptsLegacy(
-  token: string,
-  accountId: string,
-): Promise<CfWorkerScript[]> {
-  const pagePath = (page: number) =>
-    `/accounts/${accountId}/workers/scripts?page=${page}`;
-  const first = await requestEnvelope<RawWorkerScript[]>(pagePath(1), token);
-  const scripts = first.result.map(toWorkerScript);
-
-  const pageSize = first.result_info?.per_page ?? first.result.length;
-  const total = first.result_info?.total_count ?? scripts.length;
-  if (pageSize > 0 && total > scripts.length) {
-    const totalPages = Math.min(
-      Math.ceil(total / pageSize),
-      SCRIPTS_MAX_PAGES,
-    );
-    const envelopes = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, index) =>
-        requestEnvelope<RawWorkerScript[]>(pagePath(index + 2), token),
-      ),
-    );
-    for (const envelope of envelopes) {
-      scripts.push(...envelope.result.map(toWorkerScript));
-    }
-  }
-  return scripts;
-}
+const scriptsPath = (accountId: string, withListOptions: boolean) =>
+  (page: number) =>
+    withListOptions
+      ? `/accounts/${accountId}/workers/scripts?page=${page}&per_page=${SCRIPTS_PER_PAGE}`
+      : `/accounts/${accountId}/workers/scripts?page=${page}`;
 
 export async function listWorkerScripts(
   token: string,
   accountId: string,
 ): Promise<CfWorkerScript[]> {
   const legacyKey = `workers:${accountId}`;
+  const list = async (withListOptions: boolean) =>
+    (
+      await requestPaged<RawWorkerScript>(
+        scriptsPath(accountId, withListOptions),
+        token,
+      )
+    ).map(toWorkerScript);
+
+  // Some accounts reject `per_page` outright; `page` still works there.
   if (usesLegacyListOptions(legacyKey)) {
-    return listWorkerScriptsLegacy(token, accountId);
+    return list(false);
   }
   try {
-    return await listWorkerScriptsFast(token, accountId);
+    return await list(true);
   } catch (cause) {
     if (!isInvalidListOptions(cause)) {
       throw cause;
     }
     // Remember the rejection so refreshes skip the doomed request entirely.
     markLegacyListOptions(legacyKey);
-    return listWorkerScriptsLegacy(token, accountId);
+    return list(false);
   }
 }
 

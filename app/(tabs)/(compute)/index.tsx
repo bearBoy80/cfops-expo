@@ -46,7 +46,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useAccountScope } from '@/src/state/accountScope';
 import { haptics } from '@/src/utils/haptics';
 import { showResourceMenu } from '@/src/utils/resourceMenu';
-import { accent, label, tint } from '@/src/theme/tokens';
+import { accent, fontFace, label, tint } from '@/src/theme/tokens';
 import { compactNumber, relativeTime } from '@/src/utils/format';
 
 type ComputeSegment = 'workers' | 'pages';
@@ -662,20 +662,18 @@ const styles = StyleSheet.create({
     width: 30,
   },
   issue: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     marginTop: 8,
     paddingHorizontal: 16,
   },
   mono: {
+    ...fontFace('bodySmall', '600'),
     flexShrink: 1,
     fontFamily: 'Menlo',
-    fontSize: 14,
-    fontWeight: '600',
   },
   name: {
+    ...fontFace('bodyLarge', '500'),
     flexShrink: 1,
-    fontSize: 16,
-    fontWeight: '500',
   },
   row: {
     alignItems: 'center',
@@ -689,16 +687,16 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   sub: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     marginTop: 2,
   },
   subMono: {
+    ...fontFace('caption'),
     fontFamily: 'Menlo',
-    fontSize: 11,
     marginTop: 2,
   },
   subtitle: {
-    fontSize: 15,
+    ...fontFace('body'),
     marginTop: 3,
     paddingHorizontal: 16,
   },
@@ -709,9 +707,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   title: {
-    fontSize: 34,
-    fontWeight: '700',
-    letterSpacing: 0.4,
+    ...fontFace('display'),
   },
   titleLine: {
     alignItems: 'center',

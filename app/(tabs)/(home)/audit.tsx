@@ -18,7 +18,7 @@ import {
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label, tint } from '@/src/theme/tokens';
+import { accent, fontFace, label, tint } from '@/src/theme/tokens';
 import {
   countAuditFilters,
   formatAuditTitle,
@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   detail: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 3,
   },
   filter: {
@@ -262,11 +262,10 @@ const styles = StyleSheet.create({
     width: 32,
   },
   mark: {
-    fontSize: 15,
-    fontWeight: '700',
+    ...fontFace('body', '700'),
   },
   meta: {
-    fontSize: 11,
+    ...fontFace('caption'),
     marginTop: 4,
   },
   row: {
@@ -275,9 +274,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   title: {
+    ...fontFace('body', '500'),
     flexShrink: 1,
-    fontSize: 15,
-    fontWeight: '500',
   },
   titleRow: {
     alignItems: 'center',

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { CheckCircle, RefreshCw } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
@@ -9,16 +9,18 @@ import {
 } from '@/src/cloudflare/analytics';
 import { purgeZoneCache } from '@/src/cloudflare/api';
 import { getBearerForConnection } from '@/src/cloudflare/resources';
+import { confirmPurgeCache } from '@/src/cloudflare/zoneActions';
 import { ZoneSubpage } from '@/src/components/ZoneSubpage';
-import { Card, ListRow, SectionLabel } from '@/src/components/ui';
+import { Card, ListRow, SectionLabel, useToast } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label } from '@/src/theme/tokens';
+import { accent, fontFace, label } from '@/src/theme/tokens';
 import { compactNumber, formatBytes } from '@/src/utils/format';
 
 export default function ZoneCache() {
   const { t } = useTranslation();
   const { colors, mode } = useTheme();
+  const { showToast } = useToast();
   const params = useLocalSearchParams<{
     zoneId: string;
     connectionId: string;
@@ -53,24 +55,15 @@ export default function ZoneCache() {
   }, [load]);
 
   const confirmPurge = () => {
-    Alert.alert(t('zone.purgeCache'), t('zone.purgeConfirm'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('zone.purgeCache'),
-        onPress: () => {
-          setBusy(true);
-          void purgeZoneCache(bearer ?? '', params.zoneId)
-            .then(() => setPurged(true))
-            .catch((cause) => {
-              Alert.alert(
-                t('zone.actionFailed'),
-                cloudflareErrorMessage(cause),
-              );
-            })
-            .finally(() => setBusy(false));
-        },
-      },
-    ]);
+    confirmPurgeCache(t, params.name, () => {
+      setBusy(true);
+      void purgeZoneCache(bearer ?? '', params.zoneId)
+        .then(() => setPurged(true))
+        .catch((cause) => {
+          showToast(cloudflareErrorMessage(cause), 'error');
+        })
+        .finally(() => setBusy(false));
+    });
   };
 
   const stats = [
@@ -162,7 +155,7 @@ export default function ZoneCache() {
 
 const styles = StyleSheet.create({
   actionLabel: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   actionRow: {
     alignItems: 'center',
@@ -184,13 +177,10 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   tileLabel: {
-    fontSize: 12,
-    fontWeight: '500',
+    ...fontFace('footnote', '500'),
   },
   tileValue: {
-    fontSize: 22,
+    ...fontFace('title'),
     fontVariant: ['tabular-nums'],
-    fontWeight: '700',
-    letterSpacing: 0.2,
   },
 });

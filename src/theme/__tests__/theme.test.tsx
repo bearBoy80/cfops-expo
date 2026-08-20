@@ -2,7 +2,16 @@ import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react-native';
 import * as SecureStore from 'expo-secure-store';
 import { ThemeProvider, useTheme } from '../ThemeContext';
-import { accent, font, label, maxScale, radius, spacing } from '../tokens';
+import {
+  accent,
+  font,
+  fontFace,
+  label,
+  maxScale,
+  radius,
+  spacing,
+  typeScale,
+} from '../tokens';
 
 let mockSystemScheme: 'dark' | 'light' | null = 'dark';
 
@@ -66,4 +75,33 @@ test('layout and typography tokens', () => {
   expect(font('largeTitle').fontSize).toBe(28);
   expect(font('body', '600').fontWeight).toBe('600');
   expect(maxScale('body')).toBeGreaterThan(1);
+});
+
+test('font carries the leading, fontFace leaves it to the platform', () => {
+  // Screen styles were authored without a lineHeight. Adopting the scale must
+  // not silently set one, or every screen's vertical rhythm shifts.
+  expect(font('body')).toMatchObject({ fontSize: 15, lineHeight: 20 });
+  expect(fontFace('body')).toEqual({ fontSize: 15, fontWeight: '400' });
+  expect('lineHeight' in fontFace('subhead')).toBe(false);
+});
+
+test('every role the screens use is on the scale', () => {
+  // Sizes the routes rely on; a missing one sends someone back to a literal.
+  const sizes = Object.values(typeScale).map((token) => token.fontSize);
+  for (const size of [11, 12, 13, 14, 15, 16, 17, 22, 28, 34]) {
+    expect(sizes).toContain(size);
+  }
+});
+
+test('a weight override never changes the size or tracking', () => {
+  expect(fontFace('headline', '400')).toEqual({
+    fontSize: 17,
+    fontWeight: '400',
+  });
+  expect(font('title', '600')).toEqual({
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  });
 });

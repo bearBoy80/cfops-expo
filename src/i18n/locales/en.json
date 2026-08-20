@@ -398,6 +398,7 @@
     "noBuckets": "No R2 buckets in the connected accounts yet.",
     "noNamespaces": "No KV namespaces in the connected accounts yet.",
     "noDatabases": "No D1 databases in the connected accounts yet.",
+    "metricsNoPerm": "Usage figures need Account · Account Analytics · Read. Without it every bucket, namespace and database reads as empty. Add it to the connected token, then pull to refresh.",
     "searchR2": "Search buckets...",
     "searchKv": "Search namespaces...",
     "searchD1": "Search databases...",

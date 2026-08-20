@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import {
+  Linking,
+  StyleSheet,
+  Text,
+  View,
+  type ListRenderItemInfo,
+} from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -10,7 +16,7 @@ import {
 import { getBearerForConnection } from '@/src/cloudflare/resources';
 import { ZoneSubpage } from '@/src/components/ZoneSubpage';
 import {
-  Card,
+  CardRow,
   ListRow,
   MetricTile,
   Pill,
@@ -20,7 +26,7 @@ import {
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label } from '@/src/theme/tokens';
+import { accent, fontFace, label } from '@/src/theme/tokens';
 import { compactNumber } from '@/src/utils/format';
 
 function eventPillStatus(action: string): Status {
@@ -85,10 +91,64 @@ export default function ZoneFirewall() {
     event.action.includes('challenge'),
   ).length;
 
+  const eventKey = useCallback(
+    (event: ZoneFirewallEvent, index: number) => `${event.datetime}-${index}`,
+    [],
+  );
+
+  const renderEvent = useCallback(
+    ({ item, index }: ListRenderItemInfo<ZoneFirewallEvent>) => {
+      const last = index === (events?.length ?? 0) - 1;
+      return (
+        <CardRow first={index === 0} last={last}>
+          <ListRow
+            chevron={false}
+            last={last}
+            left={
+              <View style={styles.eventCopy}>
+                <View style={styles.eventTop}>
+                  <Pill status={eventPillStatus(item.action)} />
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.rule, { color: colors.text }]}
+                  >
+                    {item.ruleId || item.action}
+                  </Text>
+                  <Text style={[styles.time, { color: label(mode, 0.4) }]}>
+                    {eventTime(item.datetime)}
+                  </Text>
+                </View>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.eventSub, { color: label(mode, 0.4) }]}
+                >
+                  {[item.clientIP, item.country, item.path]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              </View>
+            }
+          />
+        </CardRow>
+      );
+    },
+    [colors.text, events?.length, mode],
+  );
+
   return (
     <ZoneSubpage
       backLabel={params.name ?? t('zone.fallbackTitle')}
       error={error}
+      list={
+        permissionDenied
+          ? undefined
+          : {
+              data: events ?? [],
+              keyExtractor: eventKey,
+              renderItem: renderEvent,
+              empty: <InlineEmpty>{t('firewall.noEvents')}</InlineEmpty>,
+            }
+      }
       loading={!events}
       onRefresh={load}
       subtitle={params.name}
@@ -127,47 +187,6 @@ export default function ZoneFirewall() {
             <Text style={styles.liveText}>{t('firewall.liveEvents')}</Text>
           </View>
 
-          {events.length > 0 ? (
-            <Card>
-              {events.map((event, index) => (
-                <ListRow
-                  key={`${event.datetime}-${index}`}
-                  chevron={false}
-                  last={index === events.length - 1}
-                  left={
-                    <View style={styles.eventCopy}>
-                      <View style={styles.eventTop}>
-                        <Pill status={eventPillStatus(event.action)} />
-                        <Text
-                          numberOfLines={1}
-                          style={[styles.rule, { color: colors.text }]}
-                        >
-                          {event.ruleId || event.action}
-                        </Text>
-                        <Text
-                          style={[styles.time, { color: label(mode, 0.4) }]}
-                        >
-                          {eventTime(event.datetime)}
-                        </Text>
-                      </View>
-                      <Text
-                        numberOfLines={1}
-                        style={[styles.eventSub, { color: label(mode, 0.4) }]}
-                      >
-                        {[event.clientIP, event.country, event.path]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </Text>
-                    </View>
-                  }
-                />
-              ))}
-            </Card>
-          ) : (
-            <InlineEmpty>
-              {t('firewall.noEvents')}
-            </InlineEmpty>
-          )}
         </>
       ) : null}
     </ZoneSubpage>
@@ -205,17 +224,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   liveText: {
+    ...fontFace('subhead', '600'),
     color: accent.red,
-    fontSize: 13,
-    fontWeight: '600',
   },
   rule: {
+    ...fontFace('body', '500'),
     flexShrink: 1,
-    fontSize: 15,
-    fontWeight: '500',
   },
   time: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     fontVariant: ['tabular-nums'],
     marginLeft: 'auto',
   },

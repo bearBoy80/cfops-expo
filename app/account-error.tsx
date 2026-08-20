@@ -4,7 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/src/auth/AuthGate';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, foreground, label, tint } from '@/src/theme/tokens';
+import {
+  accent,
+  fontFace,
+  foreground,
+  label,
+  tint,
+} from '@/src/theme/tokens';
 
 export default function AccountError() {
   const { t } = useTranslation();
@@ -55,8 +61,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   buttonText: {
-    fontSize: 16,
-    fontWeight: '700',
+    ...fontFace('bodyLarge', '700'),
   },
   content: {
     alignItems: 'center',
@@ -87,7 +92,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   warning: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 12,
     textAlign: 'center',
   },

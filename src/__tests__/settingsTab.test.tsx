@@ -1,4 +1,3 @@
-import { Alert } from 'react-native';
 import {
   fireEvent,
   render,
@@ -54,6 +53,22 @@ jest.mock('../cloudflare/connections', () => ({
   listConnections: jest.fn(),
   removeConnection: jest.fn(),
 }));
+
+jest.mock('../components/ui/actionMenu', () => ({
+  ActionMenuHost: () => null,
+  showActionMenu: jest.fn(),
+}));
+
+const { showActionMenu } = jest.requireMock<{
+  showActionMenu: jest.Mock;
+}>('../components/ui/actionMenu');
+
+/** Options of the most recently shown confirmation sheet. */
+const lastSheet = () =>
+  showActionMenu.mock.calls[showActionMenu.mock.calls.length - 1][0] as {
+    message: string;
+    actions: { destructive?: boolean; onPress: () => void }[];
+  };
 
 const account: LocalAccount = {
   name: 'Sarah Anderson',
@@ -168,11 +183,11 @@ describe('Settings tab', () => {
 
   test('disconnects from its own row, never from an account', async () => {
     jest.mocked(listConnections).mockResolvedValue([connection]);
-    const alertSpy = jest
-      .spyOn(Alert, 'alert')
-      .mockImplementation((_title, _message, buttons) => {
-        buttons?.find((button) => button.style === 'destructive')?.onPress?.();
-      });
+    showActionMenu.mockImplementation(
+      (options: { actions: { destructive?: boolean; onPress: () => void }[] }) => {
+        options.actions.find((action) => action.destructive)?.onPress();
+      },
+    );
     wrap();
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeTruthy());
 
@@ -190,12 +205,10 @@ describe('Settings tab', () => {
     await waitFor(() =>
       expect(removeConnection).toHaveBeenCalledWith('tok-1'),
     );
-    alertSpy.mockRestore();
   });
 
   test('warns that every covered account loses access', async () => {
     jest.mocked(listConnections).mockResolvedValue([connection]);
-    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     wrap();
     await waitFor(() =>
       expect(screen.getByTestId('disconnect-tok-1')).toBeTruthy(),
@@ -203,12 +216,7 @@ describe('Settings tab', () => {
 
     fireEvent.press(screen.getByTestId('disconnect-tok-1'));
 
-    expect(alertSpy).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining('All 2 accounts'),
-      expect.anything(),
-    );
-    alertSpy.mockRestore();
+    expect(lastSheet().message).toContain('All 2 accounts');
   });
 
   test('reports account errors from corrupt storage', async () => {

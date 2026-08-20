@@ -13,6 +13,7 @@ import {
   type CfR2Bucket,
   type CfWorkerScript,
 } from './api';
+import { mapLimit } from '../utils/concurrency';
 import { listConnections } from './connections';
 import { getConnectionBearer, type ConnectionIssue } from './resources';
 import { createTtlCache } from './ttlCache';
@@ -188,53 +189,61 @@ function pushIssue(
 
 const D1_DETAIL_LIMIT = 10;
 
+/**
+ * Accounts resolved at once. Each one fans out into several list calls (and D1
+ * detail lookups on top), so an unbounded outer loop turns a credential with
+ * many accounts into a burst big enough to be rate limited.
+ */
+const ACCOUNT_CONCURRENCY = 3;
+
+/** Per-item detail lookups in flight inside one account. */
+const DETAIL_CONCURRENCY = 4;
+
 async function fetchStorage(): Promise<StorageSnapshot> {
   const { connectionCount, accounts, issues } = await resolveAccounts();
   const buckets: R2BucketItem[] = [];
   const kvNamespaces: KvNamespaceItem[] = [];
   const d1Databases: D1DatabaseItem[] = [];
 
-  await Promise.all(
-    accounts.map(async (account) => {
-      const scope = {
-        accountId: account.accountId,
-        accountName: account.accountName,
-        connectionId: account.connectionId,
-      };
-      await Promise.all([
-        listR2Buckets(account.bearer, account.accountId)
-          .then((items) =>
-            buckets.push(...items.map((item) => ({ ...item, ...scope }))),
-          )
-          .catch((cause) => pushIssue(issues, account, cause)),
-        listKvNamespaces(account.bearer, account.accountId)
-          .then((items) =>
-            kvNamespaces.push(...items.map((item) => ({ ...item, ...scope }))),
-          )
-          .catch((cause) => pushIssue(issues, account, cause)),
-        listD1Databases(account.bearer, account.accountId)
-          .then(async (items) => {
-            // The list response may omit size/tables; backfill a few details.
-            const detailed = await Promise.all(
-              items.map(async (item, index) => {
-                if (item.fileSize !== null || index >= D1_DETAIL_LIMIT) {
-                  return item;
-                }
-                return getD1Database(
-                  account.bearer,
-                  account.accountId,
-                  item.uuid,
-                ).catch(() => item);
-              }),
-            );
-            d1Databases.push(
-              ...detailed.map((item) => ({ ...item, ...scope })),
-            );
-          })
-          .catch((cause) => pushIssue(issues, account, cause)),
-      ]);
-    }),
-  );
+  await mapLimit(accounts, ACCOUNT_CONCURRENCY, async (account) => {
+    const scope = {
+      accountId: account.accountId,
+      accountName: account.accountName,
+      connectionId: account.connectionId,
+    };
+    await Promise.all([
+      listR2Buckets(account.bearer, account.accountId)
+        .then((items) =>
+          buckets.push(...items.map((item) => ({ ...item, ...scope }))),
+        )
+        .catch((cause) => pushIssue(issues, account, cause)),
+      listKvNamespaces(account.bearer, account.accountId)
+        .then((items) =>
+          kvNamespaces.push(...items.map((item) => ({ ...item, ...scope }))),
+        )
+        .catch((cause) => pushIssue(issues, account, cause)),
+      listD1Databases(account.bearer, account.accountId)
+        .then(async (items) => {
+          // The list response may omit size/tables; backfill a few details.
+          const detailed = await mapLimit(
+            items,
+            DETAIL_CONCURRENCY,
+            async (item, index) => {
+              if (item.fileSize !== null || index >= D1_DETAIL_LIMIT) {
+                return item;
+              }
+              return getD1Database(
+                account.bearer,
+                account.accountId,
+                item.uuid,
+              ).catch(() => item);
+            },
+          );
+          d1Databases.push(...detailed.map((item) => ({ ...item, ...scope })));
+        })
+        .catch((cause) => pushIssue(issues, account, cause)),
+    ]);
+  });
 
   const byName = <T extends { name: string }>(a: T, b: T) =>
     a.name.localeCompare(b.name);
@@ -262,37 +271,35 @@ async function fetchCompute(): Promise<ComputeSnapshot> {
   const workers: WorkerItem[] = [];
   const pages: PagesProjectItem[] = [];
 
-  await Promise.all(
-    accounts.map(async (account) => {
-      const scope = {
-        accountId: account.accountId,
-        accountName: account.accountName,
-        connectionId: account.connectionId,
-      };
-      await Promise.all([
-        listWorkerScripts(account.bearer, account.accountId)
-          .then((items) => {
-            if (__DEV__) {
-              console.log(
-                `[compute] ${account.accountName}: ${items.length} workers`,
-              );
-            }
-            workers.push(...items.map((item) => ({ ...item, ...scope })));
-          })
-          .catch((cause) => pushIssue(issues, account, cause)),
-        listPagesProjects(account.bearer, account.accountId)
-          .then((items) => {
-            if (__DEV__) {
-              console.log(
-                `[compute] ${account.accountName}: ${items.length} pages projects`,
-              );
-            }
-            pages.push(...items.map((item) => ({ ...item, ...scope })));
-          })
-          .catch((cause) => pushIssue(issues, account, cause)),
-      ]);
-    }),
-  );
+  await mapLimit(accounts, ACCOUNT_CONCURRENCY, async (account) => {
+    const scope = {
+      accountId: account.accountId,
+      accountName: account.accountName,
+      connectionId: account.connectionId,
+    };
+    await Promise.all([
+      listWorkerScripts(account.bearer, account.accountId)
+        .then((items) => {
+          if (__DEV__) {
+            console.log(
+              `[compute] ${account.accountName}: ${items.length} workers`,
+            );
+          }
+          workers.push(...items.map((item) => ({ ...item, ...scope })));
+        })
+        .catch((cause) => pushIssue(issues, account, cause)),
+      listPagesProjects(account.bearer, account.accountId)
+        .then((items) => {
+          if (__DEV__) {
+            console.log(
+              `[compute] ${account.accountName}: ${items.length} pages projects`,
+            );
+          }
+          pages.push(...items.map((item) => ({ ...item, ...scope })));
+        })
+        .catch((cause) => pushIssue(issues, account, cause)),
+    ]);
+  });
 
   workers.sort((a, b) => a.id.localeCompare(b.id));
   pages.sort((a, b) => a.name.localeCompare(b.name));

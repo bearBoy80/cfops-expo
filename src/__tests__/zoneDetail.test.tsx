@@ -1,4 +1,3 @@
-import { Alert } from 'react-native';
 import {
   fireEvent,
   render,
@@ -55,6 +54,11 @@ jest.mock('../cloudflare/analytics', () => ({
   invalidateZonesRangeSnapshot: jest.fn(),
 }));
 
+jest.mock('../components/ui/actionMenu', () => ({
+  ActionMenuHost: () => null,
+  showActionMenu: jest.fn(),
+}));
+
 jest.mock('../cloudflare/api', () => {
   const actual =
     jest.requireActual<typeof import('../cloudflare/api')>('../cloudflare/api');
@@ -87,17 +91,21 @@ const wrap = () =>
     </ThemeProvider>,
   );
 
-/** Presses the confirm (non-cancel) button of the last Alert.alert call. */
-const confirmLastAlert = () => {
-  const calls = jest.mocked(Alert.alert).mock.calls;
-  const buttons = calls[calls.length - 1][2];
-  const confirm = buttons?.find((button) => button.style !== 'cancel');
-  confirm?.onPress?.();
+const { showActionMenu } = jest.requireMock<{
+  showActionMenu: jest.Mock;
+}>('../components/ui/actionMenu');
+
+/** Presses the first action of the most recently shown confirmation sheet. */
+const confirmLastSheet = () => {
+  const calls = showActionMenu.mock.calls;
+  const options = calls[calls.length - 1][0] as {
+    actions: { onPress: () => void }[];
+  };
+  options.actions[0].onPress();
 };
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   jest.mocked(getZone).mockResolvedValue(zone);
   jest.mocked(getZoneSslMode).mockResolvedValue('strict');
   jest.mocked(countDnsRecords).mockResolvedValue(8);
@@ -132,7 +140,7 @@ test('pauses the zone after confirmation', async () => {
   await waitFor(() => expect(screen.getByText('Pause Zone')).toBeTruthy());
 
   fireEvent.press(screen.getByTestId('zone-action-pause'));
-  confirmLastAlert();
+  confirmLastSheet();
 
   await waitFor(() =>
     expect(setZonePaused).toHaveBeenCalledWith('bearer-1', 'zone-1', true),
@@ -158,7 +166,7 @@ test('removes the zone and navigates back after confirmation', async () => {
   await waitFor(() => expect(screen.getByText('Remove Zone')).toBeTruthy());
 
   fireEvent.press(screen.getByTestId('zone-action-remove'));
-  confirmLastAlert();
+  confirmLastSheet();
 
   await waitFor(() =>
     expect(deleteZone).toHaveBeenCalledWith('bearer-1', 'zone-1'),

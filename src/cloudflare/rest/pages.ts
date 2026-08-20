@@ -4,6 +4,7 @@ import {
   markLegacyListOptions,
   request,
   requestEnvelope,
+  requestPaged,
   usesLegacyListOptions,
 } from './client';
 
@@ -71,92 +72,42 @@ function toPagesProject(project: RawPagesProject): CfPagesProject {
   };
 }
 
+// The endpoint defaults to 10 items per page; ask for the practical maximum
+// so most accounts resolve in one round trip.
 const PROJECTS_PER_PAGE = 100;
-const PROJECTS_MAX_PAGES = 20;
 
-async function listPagesProjectsFast(
-  token: string,
-  accountId: string,
-): Promise<CfPagesProject[]> {
-  // The endpoint defaults to 10 items per page; ask for the practical
-  // maximum so most accounts resolve in one round trip.
-  const pagePath = (page: number) =>
-    `/accounts/${accountId}/pages/projects?page=${page}&per_page=${PROJECTS_PER_PAGE}`;
-  const first = await requestEnvelope<RawPagesProject[]>(pagePath(1), token);
-  const projects = first.result.map(toPagesProject);
-
-  const info = first.result_info;
-  const totalPages =
-    info?.total_pages ??
-    (info?.total_count && first.result.length > 0
-      ? Math.ceil(info.total_count / first.result.length)
-      : 1);
-  const lastPage = Math.min(totalPages, PROJECTS_MAX_PAGES);
-  if (lastPage > 1 && first.result.length > 0) {
-    // The first response tells us how many pages exist, so the rest can be
-    // fetched in parallel instead of one sequential round trip per page.
-    const envelopes = await Promise.all(
-      Array.from({ length: lastPage - 1 }, (_, index) =>
-        requestEnvelope<RawPagesProject[]>(pagePath(index + 2), token),
-      ),
-    );
-    for (const envelope of envelopes) {
-      projects.push(...envelope.result.map(toPagesProject));
-    }
-  }
-  return projects;
-}
-
-/**
- * Fetch without list options for accounts that reject them. Only `per_page`
- * is refused; `page` still works, so after the first page reveals the total
- * the remaining pages load in parallel.
- */
-async function listPagesProjectsLegacy(
-  token: string,
-  accountId: string,
-): Promise<CfPagesProject[]> {
-  const pagePath = (page: number) =>
-    `/accounts/${accountId}/pages/projects?page=${page}`;
-  const first = await requestEnvelope<RawPagesProject[]>(pagePath(1), token);
-  const projects = first.result.map(toPagesProject);
-
-  const pageSize = first.result_info?.per_page ?? first.result.length;
-  const total = first.result_info?.total_count ?? projects.length;
-  if (pageSize > 0 && total > projects.length) {
-    const totalPages = Math.min(
-      Math.ceil(total / pageSize),
-      PROJECTS_MAX_PAGES,
-    );
-    const envelopes = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, index) =>
-        requestEnvelope<RawPagesProject[]>(pagePath(index + 2), token),
-      ),
-    );
-    for (const envelope of envelopes) {
-      projects.push(...envelope.result.map(toPagesProject));
-    }
-  }
-  return projects;
-}
+const projectsPath = (accountId: string, withListOptions: boolean) =>
+  (page: number) =>
+    withListOptions
+      ? `/accounts/${accountId}/pages/projects?page=${page}&per_page=${PROJECTS_PER_PAGE}`
+      : `/accounts/${accountId}/pages/projects?page=${page}`;
 
 export async function listPagesProjects(
   token: string,
   accountId: string,
 ): Promise<CfPagesProject[]> {
   const legacyKey = `pages:${accountId}`;
+  const list = async (withListOptions: boolean) =>
+    (
+      await requestPaged<RawPagesProject>(
+        projectsPath(accountId, withListOptions),
+        token,
+      )
+    ).map(toPagesProject);
+
+  // Some accounts reject `per_page` outright; `page` still works there.
   if (usesLegacyListOptions(legacyKey)) {
-    return listPagesProjectsLegacy(token, accountId);
+    return list(false);
   }
   try {
-    return await listPagesProjectsFast(token, accountId);
+    return await list(true);
   } catch (cause) {
     if (!isInvalidListOptions(cause)) {
       throw cause;
     }
     // Remember the rejection so refreshes skip the doomed request entirely.
     markLegacyListOptions(legacyKey);
-    return listPagesProjectsLegacy(token, accountId);
+    return list(false);
   }
 }
 

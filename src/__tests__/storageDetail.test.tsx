@@ -85,6 +85,7 @@ beforeEach(() => {
       ['ns-1', { keyCount: 42, byteCount: 512, reads: 30, writes: 5 }],
     ]),
     d1: new Map([['db-1', { readQueries: 100, writeQueries: 20 }]]),
+   permissionDenied: false,
   });
   jest.mocked(listKvKeys).mockResolvedValue([
     { name: 'session:abc', expiration: null },
@@ -359,6 +360,7 @@ test('kv keys tile falls back to the listed key count when analytics is empty', 
     r2: new Map(),
     kv: new Map(),
     d1: new Map(),
+    permissionDenied: false,
   });
 
   wrap(<KvNamespaceDetail />);

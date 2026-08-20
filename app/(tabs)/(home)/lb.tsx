@@ -19,7 +19,7 @@ import {
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { label } from '@/src/theme/tokens';
+import { fontFace, label } from '@/src/theme/tokens';
 
 export default function HomeLoadBalancing() {
   const { t } = useTranslation();
@@ -171,8 +171,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   name: {
-    fontSize: 15,
-    fontWeight: '500',
+    ...fontFace('body', '500'),
   },
   row: {
     alignItems: 'flex-start',
@@ -180,10 +179,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   steering: {
-    fontSize: 11,
+    ...fontFace('caption'),
   },
   sub: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 2,
   },
 });

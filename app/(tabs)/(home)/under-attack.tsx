@@ -25,7 +25,7 @@ import {
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label, spacing } from '@/src/theme/tokens';
+import { accent, font, label, spacing } from '@/src/theme/tokens';
 import { mapLimit } from '@/src/utils/concurrency';
 
 /** Cap parallel per-zone security-level lookups (accounts can have many zones). */
@@ -229,8 +229,7 @@ export default function HomeUnderAttack() {
 
 const styles = StyleSheet.create({
   hint: {
-    fontSize: 13,
-    lineHeight: 18,
+    ...font('subhead'),
     marginBottom: 16,
     paddingHorizontal: spacing.lg,
   },

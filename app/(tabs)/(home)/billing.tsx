@@ -11,7 +11,7 @@ import { ZoneSubpage } from '@/src/components/ZoneSubpage';
 import { Card, SectionLabel, InlineEmpty } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, hairline, label } from '@/src/theme/tokens';
+import { accent, fontFace, hairline, label } from '@/src/theme/tokens';
 import { formatCurrency } from '@/src/utils/format';
 
 export default function HomeBilling() {
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   heroLabel: {
-    fontSize: 12,
+    ...fontFace('footnote'),
   },
   heroValue: {
     fontSize: 32,
@@ -169,15 +169,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   itemCost: {
+    ...fontFace('body', '600'),
     color: accent.orange,
-    fontSize: 15,
     fontVariant: ['tabular-nums'],
-    fontWeight: '600',
   },
   itemName: {
+    ...fontFace('bodyLarge', '500'),
     flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
     marginRight: 12,
   },
   itemRow: {
@@ -186,7 +184,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   itemUsage: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 4,
   },
 });

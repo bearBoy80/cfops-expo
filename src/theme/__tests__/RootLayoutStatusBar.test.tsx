@@ -4,8 +4,6 @@ import RootLayout from '@/app/_layout';
 
 let mockThemeMode: 'dark' | 'light' = 'dark';
 
-jest.mock('@/global.css', () => ({}));
-
 jest.mock('expo-router', () => {
   const React = require('react');
   const { View } = require('react-native');

@@ -1,3 +1,4 @@
+import { mapLimit } from '../../utils/concurrency';
 import { listConnections } from '../connections';
 import {
   getConnectionBearer,
@@ -6,6 +7,7 @@ import {
 } from '../resources';
 import { createKeyedTtlCache } from '../ttlCache';
 import {
+  QUERY_CONCURRENCY,
   ZONES_PER_QUERY,
   runQuery,
   utcDateString,
@@ -88,10 +90,8 @@ async function fetchRangeSnapshot(
           chunks.push(list.slice(i, i + ZONES_PER_QUERY).map((zone) => zone.id));
         }
         const raw: RawZone[] = (
-          await Promise.all(
-            chunks.map((tags) =>
-              runQuery(bearer, ZONES_DAILY_QUERY, { tags, since }),
-            ),
+          await mapLimit(chunks, QUERY_CONCURRENCY, (tags) =>
+            runQuery(bearer, ZONES_DAILY_QUERY, { tags, since }),
           )
         ).flat();
 
@@ -173,21 +173,42 @@ const RANGE_TTL_MS = 300_000;
 
 const rangeCache = createKeyedTtlCache<
   RangeTrafficSnapshot,
-  number,
-  [ZonesSnapshot]
->(RANGE_TTL_MS, (days, zonesSnapshot) =>
+  string,
+  [ZonesSnapshot, number]
+>(RANGE_TTL_MS, (_key, zonesSnapshot, days) =>
   fetchRangeSnapshot(zonesSnapshot, days),
 );
+
+/**
+ * The zone set is part of the key, not just an input.
+ *
+ * An aggregate computed over a different set of zones is a different result, so
+ * keying on the window alone meant every path that adds or removes a zone had
+ * to remember to invalidate by hand — and a five-minute-stale total that still
+ * counts a deleted zone is indistinguishable from a correct one.
+ */
+function rangeKey(zonesSnapshot: ZonesSnapshot, days: number): string {
+  const zoneIds = zonesSnapshot.zones
+    .map((zone) => zone.id)
+    .sort()
+    .join(',');
+  return `${days}:${zoneIds}`;
+}
 
 export function fetchZonesRangeSnapshot(
   zonesSnapshot: ZonesSnapshot,
   days: number,
   options?: { force?: boolean },
 ): Promise<RangeTrafficSnapshot> {
-  return rangeCache.get(days, options, zonesSnapshot);
+  return rangeCache.get(
+    rangeKey(zonesSnapshot, days),
+    options,
+    zonesSnapshot,
+    days,
+  );
 }
 
-/** Drops the cached range for one window, or every window when omitted. */
-export function invalidateZonesRangeSnapshot(days?: number): void {
-  rangeCache.invalidate(days);
+/** Drops every cached range window. */
+export function invalidateZonesRangeSnapshot(): void {
+  rangeCache.invalidate();
 }

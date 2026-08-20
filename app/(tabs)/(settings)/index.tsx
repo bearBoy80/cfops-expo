@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
   Linking,
   ScrollView,
   StyleSheet,
@@ -45,11 +44,12 @@ import {
   ListRow,
   SectionLabel,
   SegmentedControl,
+  showActionMenu,
   ToggleRow,
 } from '@/src/components/ui';
 import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label, tint } from '@/src/theme/tokens';
+import { accent, fontFace, label, tint } from '@/src/theme/tokens';
 import { haptics } from '@/src/utils/haptics';
 
 const chipColors = [accent.orange, accent.blue, accent.green, accent.red];
@@ -149,21 +149,22 @@ export default function SettingsScreen() {
   };
 
   const disconnect = (connection: CloudflareConnection) => {
-    Alert.alert(
-      t('settings.disconnectTitle'),
+    showActionMenu({
+      title: t('settings.disconnectTitle'),
       // One credential can cover several accounts, and removing it cuts off all
       // of them. Naming only the credential would understate that.
-      connection.accounts.length > 1
-        ? t('settings.disconnectMessageMulti', {
-            count: connection.accounts.length,
-            label: connection.label,
-          })
-        : t('settings.disconnectMessage', { label: connection.label }),
-      [
-        { style: 'cancel', text: t('common.cancel') },
+      message:
+        connection.accounts.length > 1
+          ? t('settings.disconnectMessageMulti', {
+              count: connection.accounts.length,
+              label: connection.label,
+            })
+          : t('settings.disconnectMessage', { label: connection.label }),
+      cancelLabel: t('common.cancel'),
+      actions: [
         {
-          style: 'destructive',
-          text: t('settings.disconnect'),
+          label: t('settings.disconnect'),
+          destructive: true,
           onPress: () => {
             void removeConnection(connection.id).then(() => {
               invalidateAllSnapshots();
@@ -172,7 +173,7 @@ export default function SettingsScreen() {
           },
         },
       ],
-    );
+    });
   };
 
   useEffect(() => {
@@ -640,12 +641,11 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   accountRowName: {
+    ...fontFace('body', '500'),
     flexShrink: 1,
-    fontSize: 15,
-    fontWeight: '500',
   },
   accountRowSub: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 1,
   },
   accountRowTitle: {
@@ -654,8 +654,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   credentialAccountName: {
+    ...fontFace('bodySmall'),
     flexShrink: 1,
-    fontSize: 14,
   },
   credentialAccountRow: {
     alignItems: 'center',
@@ -665,8 +665,8 @@ const styles = StyleSheet.create({
     paddingLeft: 22,
   },
   disconnectLabel: {
+    ...fontFace('bodySmall'),
     color: accent.red,
-    fontSize: 14,
     paddingLeft: 22,
   },
   healthDot: {
@@ -689,12 +689,11 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   accountDetail: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 2,
   },
   accountName: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...fontFace('bodyLarge', '600'),
   },
   connectIcon: {
     alignItems: 'center',
@@ -704,9 +703,8 @@ const styles = StyleSheet.create({
     width: 32,
   },
   connectLabel: {
+    ...fontFace('body', '500'),
     color: accent.orange,
-    fontSize: 15,
-    fontWeight: '500',
   },
   connectRow: {
     alignItems: 'center',
@@ -718,21 +716,20 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   emptyAccountsSub: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 2,
   },
   emptyAccountsTitle: {
-    fontSize: 14,
-    fontWeight: '500',
+    ...fontFace('bodySmall', '500'),
   },
   error: {
+    ...fontFace('footnote'),
     color: accent.red,
-    fontSize: 12,
     marginTop: 8,
     paddingHorizontal: 20,
   },
   footer: {
-    fontSize: 11,
+    ...fontFace('caption'),
     marginTop: 24,
     textAlign: 'center',
   },
@@ -744,8 +741,7 @@ const styles = StyleSheet.create({
     width: 32,
   },
   languageLabel: {
-    fontSize: 15,
-    fontWeight: '500',
+    ...fontFace('body', '500'),
   },
   languageRow: {
     alignItems: 'center',
@@ -753,7 +749,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   languageValue: {
-    fontSize: 14,
+    ...fontFace('bodySmall'),
   },
   lockWrap: {
     marginTop: 16,
@@ -762,15 +758,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   subtitle: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     marginBottom: 12,
     marginTop: 2,
     paddingHorizontal: 16,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: -0.5,
+    ...fontFace('largeTitle'),
     paddingBottom: 0,
     paddingHorizontal: 16,
     paddingTop: 12,

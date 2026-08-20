@@ -1,4 +1,4 @@
-import { request, requestEnvelope } from './client';
+import { request, requestEnvelope, requestPaged } from './client';
 
 /** Total DNS record count, cheap enough for the zone overview row. */
 export async function countDnsRecords(
@@ -21,20 +21,25 @@ export interface CfDnsRecord {
   ttl: number;
 }
 
+/** Maximum the `dns_records` endpoint accepts. */
+const RECORDS_PER_PAGE = 100;
+
 export async function listDnsRecords(
   token: string,
   zoneId: string,
 ): Promise<CfDnsRecord[]> {
-  const result = await request<
-    {
-      id: string;
-      type: string;
-      name: string;
-      content?: string;
-      proxied?: boolean;
-      ttl?: number;
-    }[]
-  >(`/zones/${zoneId}/dns_records?per_page=100`, token);
+  const result = await requestPaged<{
+    id: string;
+    type: string;
+    name: string;
+    content?: string;
+    proxied?: boolean;
+    ttl?: number;
+  }>(
+    (page) =>
+      `/zones/${zoneId}/dns_records?page=${page}&per_page=${RECORDS_PER_PAGE}`,
+    token,
+  );
   return result.map((record) => ({
     id: record.id,
     type: record.type,

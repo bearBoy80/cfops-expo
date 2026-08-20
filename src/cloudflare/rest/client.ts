@@ -1,3 +1,5 @@
+import { mapLimit } from '../../utils/concurrency';
+
 const API_BASE = 'https://api.cloudflare.com/client/v4';
 
 export type CloudflareApiErrorCode =
@@ -149,4 +151,61 @@ export async function request<T>(
   init?: ApiRequestInit,
 ): Promise<T> {
   return (await requestEnvelope<T>(path, token, init)).result;
+}
+
+/**
+ * Pages walked at most, so a pathological account cannot turn one screen into
+ * hundreds of requests. 20 pages of 100 covers every realistic list.
+ */
+const DEFAULT_MAX_PAGES = 20;
+
+/**
+ * Page requests in flight for one list. The snapshots already fan out over
+ * accounts, so an unbounded inner fan-out multiplies into the rate limit.
+ */
+const PAGE_CONCURRENCY = 4;
+
+/**
+ * Walks a `page`-paginated list endpoint and returns every item.
+ *
+ * The first response reveals how many pages exist, so the rest are fetched
+ * with bounded parallelism rather than one sequential round trip each. Callers
+ * build the path per page, which is also how the `per_page`-less variant is
+ * expressed for accounts that reject list options.
+ */
+export async function requestPaged<T>(
+  pagePath: (page: number) => string,
+  token: string,
+  options?: { maxPages?: number },
+): Promise<T[]> {
+  const first = await requestEnvelope<T[]>(pagePath(1), token);
+  const items = [...first.result];
+  if (first.result.length === 0) {
+    return items;
+  }
+
+  const info = first.result_info;
+  // `per_page` is the page size the server actually applied, which is not
+  // necessarily the one that was asked for. Falling back to the length of the
+  // first page keeps endpoints that omit it from looking like a single page.
+  const pageSize = info?.per_page ?? first.result.length;
+  const totalPages =
+    info?.total_pages ??
+    (info?.total_count !== undefined && pageSize > 0
+      ? Math.ceil(info.total_count / pageSize)
+      : 1);
+
+  const lastPage = Math.min(totalPages, options?.maxPages ?? DEFAULT_MAX_PAGES);
+  if (lastPage <= 1) {
+    return items;
+  }
+
+  const pages = Array.from({ length: lastPage - 1 }, (_, index) => index + 2);
+  const envelopes = await mapLimit(pages, PAGE_CONCURRENCY, (page) =>
+    requestEnvelope<T[]>(pagePath(page), token),
+  );
+  for (const envelope of envelopes) {
+    items.push(...envelope.result);
+  }
+  return items;
 }

@@ -13,6 +13,16 @@ jest.mock('expo-auth-session', () => ({
   exchangeCodeAsync: jest.fn(),
   refreshAsync: jest.fn(),
   makeRedirectUri: jest.fn(() => 'cfops://oauth/callback'),
+  // Stands in for the real error the token helpers throw when the endpoint
+  // answers with an OAuth error body instead of tokens.
+  TokenError: class TokenError extends Error {
+    params: Record<string, string>;
+
+    constructor(params: Record<string, string>) {
+      super(params.error_description ?? params.error);
+      this.params = params;
+    }
+  },
 }));
 
 jest.mock('expo-web-browser', () => ({
@@ -20,7 +30,7 @@ jest.mock('expo-web-browser', () => ({
 }));
 
 import type { AuthRequest, AuthSessionResult } from 'expo-auth-session';
-import { exchangeCodeAsync } from 'expo-auth-session';
+import { exchangeCodeAsync, refreshAsync, TokenError } from 'expo-auth-session';
 import { openAuthSessionAsync } from 'expo-web-browser';
 import {
   appCallbackUrl,
@@ -28,6 +38,7 @@ import {
   exchangeAuthorizationCode,
   fetchOauthIdentity,
   getOauthConfig,
+  refreshOauthTokens,
 } from '../oauth';
 
 const mockFetch = jest.fn();
@@ -206,6 +217,67 @@ describe('exchangeAuthorizationCode', () => {
         tokenEndpoint: 'https://dash.cloudflare.com/oauth2/token',
       }),
     );
+  });
+
+  const success = {
+    type: 'success',
+    params: { code: 'the-code' },
+  } as unknown as AuthSessionResult;
+
+  test('reports a rejected exchange as an authorization failure', async () => {
+    configure();
+    jest.mocked(exchangeCodeAsync).mockRejectedValue(
+      new TokenError({
+        error: 'invalid_grant',
+        error_description: 'The authorization code has expired.',
+      }),
+    );
+
+    // Cloudflare answered. Calling that a connectivity problem hides the only
+    // thing the user can act on, which is to authorize again.
+    await expect(
+      exchangeAuthorizationCode(request, success),
+    ).rejects.toMatchObject({
+      code: 'oauth-failed',
+      message: 'The authorization code has expired.',
+    });
+  });
+
+  test('reports an unreachable token endpoint as a network failure', async () => {
+    configure();
+    jest
+      .mocked(exchangeCodeAsync)
+      .mockRejectedValue(new TypeError('Network request failed'));
+
+    await expect(
+      exchangeAuthorizationCode(request, success),
+    ).rejects.toMatchObject({ code: 'network' });
+  });
+});
+
+describe('refreshOauthTokens', () => {
+  test('reports a revoked grant as an expired session', async () => {
+    configure();
+    jest
+      .mocked(refreshAsync)
+      .mockRejectedValue(new TokenError({ error: 'invalid_grant' }));
+
+    await expect(refreshOauthTokens('revoked')).rejects.toMatchObject({
+      code: 'session-expired',
+    });
+  });
+
+  test('keeps a grant that merely failed to reach Cloudflare', async () => {
+    configure();
+    jest
+      .mocked(refreshAsync)
+      .mockRejectedValue(new TypeError('Network request failed'));
+
+    // `session-expired` reads as "sign in again", which is the wrong advice for
+    // a refresh token that is still perfectly good.
+    await expect(refreshOauthTokens('the-refresh')).rejects.toMatchObject({
+      code: 'network',
+    });
   });
 });
 

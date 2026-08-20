@@ -51,9 +51,12 @@ import {
   InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useSequencer, type IfCurrent } from '@/src/state/useSequencedLoad';
 import { useTheme } from '@/src/theme/ThemeContext';
 import {
   accent,
+  font,
+  fontFace,
   foreground,
   label,
 } from '@/src/theme/tokens';
@@ -101,62 +104,78 @@ export default function WorkerDetail() {
   } | null>(null);
   const [domainError, setDomainError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const sequence = useSequencer();
 
   const loadManagement = useCallback(
-    async (resolved: string) => {
+    async (resolved: string, ifCurrent: IfCurrent) => {
       // Every block degrades independently: missing write/read permissions
       // must not blank the whole page.
       await Promise.all([
         listWorkerVersions(resolved, params.accountId, params.script)
-          .then((items) => setVersions(items.slice(0, MAX_VERSIONS)))
-          .catch(() => setVersions([])),
+          .then((items) => ifCurrent(setVersions)(items.slice(0, MAX_VERSIONS)))
+          .catch(() => ifCurrent(setVersions)([])),
         getActiveWorkerVersion(resolved, params.accountId, params.script)
-          .then(setActiveVersionId)
+          .then(ifCurrent(setActiveVersionId))
           .catch(() => {}),
         listWorkerDomains(resolved, params.accountId, params.script)
-          .then(setDomains)
-          .catch(() => setDomains([])),
+          .then(ifCurrent(setDomains))
+          .catch(() => ifCurrent(setDomains)([])),
         getWorkerSubdomainConfig(resolved, params.accountId, params.script)
-          .then(setSubdomain)
+          .then(ifCurrent(setSubdomain))
           .catch(() => {}),
       ]);
     },
     [params.accountId, params.script],
   );
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const resolved = await getBearerForConnection(params.connectionId);
-      setBearer(resolved);
-      await Promise.all([
-        fetchWorkerMetrics(resolved, params.accountId)
-          .then((all) => {
-            setMetrics(all.get(params.script) ?? null);
-          })
-          .catch(() => {}),
-        fetchWorkerHourlySeries(resolved, params.accountId, params.script)
-          .then((points) => {
-            setSeries(points);
-          })
-          .catch(() => {}),
-        loadManagement(resolved),
-        fetchZonesSnapshot()
-          .then((snapshot) => {
-            setZones(
-              snapshot.zones
-                .filter((zone) => zone.accountId === params.accountId)
-                .map((zone) => ({ id: zone.id, name: zone.name })),
-            );
-          })
-          .catch(() => {}),
-      ]);
-    } catch (cause) {
-      setError(cloudflareErrorMessage(cause));
-    } finally {
-      setLoading(false);
-    }
-  }, [params.accountId, params.connectionId, params.script, loadManagement]);
+  const load = useCallback(
+    () =>
+      sequence(async (ifCurrent) => {
+        ifCurrent(setError)(null);
+        try {
+          const resolved = await getBearerForConnection(params.connectionId);
+          ifCurrent(setBearer)(resolved);
+          await Promise.all([
+            fetchWorkerMetrics(resolved, params.accountId)
+              .then((all) => {
+                ifCurrent(setMetrics)(all.get(params.script) ?? null);
+              })
+              .catch(() => {}),
+            fetchWorkerHourlySeries(resolved, params.accountId, params.script)
+              .then(ifCurrent(setSeries))
+              .catch(() => {}),
+            loadManagement(resolved, ifCurrent),
+            fetchZonesSnapshot()
+              .then((snapshot) => {
+                ifCurrent(setZones)(
+                  snapshot.zones
+                    .filter((zone) => zone.accountId === params.accountId)
+                    .map((zone) => ({ id: zone.id, name: zone.name })),
+                );
+              })
+              .catch(() => {}),
+          ]);
+        } catch (cause) {
+          ifCurrent(setError)(cloudflareErrorMessage(cause));
+        } finally {
+          ifCurrent(setLoading)(false);
+        }
+      }),
+    [
+      loadManagement,
+      params.accountId,
+      params.connectionId,
+      params.script,
+      sequence,
+    ],
+  );
+
+  /** Re-reads just the management blocks after changing one of them. */
+  const reloadManagement = useCallback(
+    (resolved: string) =>
+      sequence((ifCurrent) => loadManagement(resolved, ifCurrent)),
+    [loadManagement, sequence],
+  );
 
   useEffect(() => {
     void load();
@@ -189,7 +208,7 @@ export default function WorkerDetail() {
                 // The list row shows modifiedOn, which the rollback bumps.
                 invalidateComputeSnapshot();
                 showToast(t('compute.rollbackDone'));
-                await loadManagement(bearer);
+                await reloadManagement(bearer);
               })
               .catch((cause) => {
                 showToast(cloudflareErrorMessage(cause), 'error');
@@ -246,7 +265,7 @@ export default function WorkerDetail() {
       .then(async () => {
         setDomainSheet(null);
         showToast(t('compute.domainAdded'));
-        await loadManagement(bearer);
+        await reloadManagement(bearer);
       })
       .catch((cause) => {
         // Toasts render below RN modals, so surface the failure inline.
@@ -272,7 +291,7 @@ export default function WorkerDetail() {
             void detachWorkerDomain(bearer, params.accountId, domain.id)
               .then(async () => {
                 showToast(t('compute.domainRemoved'));
-                await loadManagement(bearer);
+                await reloadManagement(bearer);
               })
               .catch((cause) => {
                 showToast(cloudflareErrorMessage(cause), 'error');
@@ -649,8 +668,8 @@ export default function WorkerDetail() {
 
 const styles = StyleSheet.create({
   addRow: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   chartWrap: {
     padding: 16,
@@ -660,35 +679,33 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   empty: {
-    fontSize: 14,
+    ...fontFace('bodySmall'),
   },
   emptyZones: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     paddingHorizontal: 16,
   },
   fieldError: {
+    ...fontFace('subhead'),
     color: accent.red,
-    fontSize: 13,
     marginTop: 6,
     paddingHorizontal: 16,
   },
   fieldLabel: {
-    fontSize: 12,
-    fontWeight: '500',
+    ...fontFace('footnote', '500'),
     marginBottom: 6,
     marginTop: 14,
     paddingHorizontal: 16,
     textTransform: 'uppercase',
   },
   footnote: {
-    fontSize: 13,
-    lineHeight: 18,
+    ...font('subhead'),
     marginTop: 8,
     paddingHorizontal: 32,
   },
   input: {
+    ...fontFace('headline', '400'),
     borderRadius: 10,
-    fontSize: 17,
     marginHorizontal: 16,
     minHeight: 44,
     paddingHorizontal: 12,
@@ -699,9 +716,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   mono: {
+    ...fontFace('subhead', '600'),
     fontFamily: 'Menlo',
-    fontSize: 13,
-    fontWeight: '600',
   },
   pill: {
     borderRadius: 17,
@@ -712,18 +728,17 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   pillText: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...fontFace('body', '600'),
   },
   pills: {
     gap: 8,
     paddingHorizontal: 16,
   },
   rowLabel: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   rowValue: {
-    fontSize: 15,
+    ...fontFace('body'),
   },
   sheet: {
     borderTopLeftRadius: 20,
@@ -732,9 +747,8 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   sheetAction: {
+    ...fontFace('headline'),
     color: accent.orange,
-    fontSize: 17,
-    fontWeight: '600',
   },
   sheetBackdrop: {
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -745,8 +759,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheetCancel: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   sheetHandle: {
     alignSelf: 'center',
@@ -769,13 +783,12 @@ const styles = StyleSheet.create({
     minWidth: 60,
   },
   sheetTitle: {
+    ...fontFace('headline'),
     flex: 1,
-    fontSize: 17,
-    fontWeight: '600',
     textAlign: 'center',
   },
   sub: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 2,
   },
   tileRow: {

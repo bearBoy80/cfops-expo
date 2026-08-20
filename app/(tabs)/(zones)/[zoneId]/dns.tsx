@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -11,6 +10,7 @@ import {
   Text,
   TextInput,
   View,
+  type ListRenderItemInfo,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Cloud, Plus } from 'lucide-react-native';
@@ -30,16 +30,24 @@ import {
 import { getBearerForConnection } from '@/src/cloudflare/resources';
 import { ZoneSubpage } from '@/src/components/ZoneSubpage';
 import {
-  Card,
+  CardRow,
   ListRow,
   SectionLabel,
+  showActionMenu,
   ToggleRow,
   useToast,
   InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useSequencer } from '@/src/state/useSequencedLoad';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, foreground, label, tint } from '@/src/theme/tokens';
+import {
+  accent,
+  fontFace,
+  foreground,
+  label,
+  tint,
+} from '@/src/theme/tokens';
 
 const recordTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS'] as const;
 
@@ -79,17 +87,22 @@ export default function ZoneDns() {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [fieldErrors, setFieldErrors] = useState<DnsFieldErrors>({});
   const [saving, setSaving] = useState(false);
+  const sequence = useSequencer();
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const resolved = await getBearerForConnection(params.connectionId);
-      setBearer(resolved);
-      setRecords(await listDnsRecords(resolved, params.zoneId));
-    } catch (cause) {
-      setError(cloudflareErrorMessage(cause));
-    }
-  }, [params.connectionId, params.zoneId]);
+  const load = useCallback(
+    () =>
+      sequence(async (ifCurrent) => {
+        ifCurrent(setError)(null);
+        try {
+          const resolved = await getBearerForConnection(params.connectionId);
+          ifCurrent(setBearer)(resolved);
+          ifCurrent(setRecords)(await listDnsRecords(resolved, params.zoneId));
+        } catch (cause) {
+          ifCurrent(setError)(cloudflareErrorMessage(cause));
+        }
+      }),
+    [params.connectionId, params.zoneId, sequence],
+  );
 
   useEffect(() => {
     void load();
@@ -99,7 +112,7 @@ export default function ZoneDns() {
     void load();
   };
 
-  const openEditor = (record: CfDnsRecord | null) => {
+  const openEditor = useCallback((record: CfDnsRecord | null) => {
     setFieldErrors({});
     setEditor({
       record,
@@ -109,7 +122,7 @@ export default function ZoneDns() {
       priority: '10',
       proxied: record?.proxied ?? false,
     });
-  };
+  }, []);
 
   /** Updates the draft and clears the stale error of the edited fields. */
   const patchEditor = (patch: Partial<EditorState>) => {
@@ -168,14 +181,14 @@ export default function ZoneDns() {
       return;
     }
     const { record } = editor;
-    Alert.alert(
-      t('dns.deleteRecord'),
-      t('dns.deleteConfirm', { type: record.type, name: record.name }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
+    showActionMenu({
+      title: t('dns.deleteRecord'),
+      message: t('dns.deleteConfirm', { type: record.type, name: record.name }),
+      cancelLabel: t('common.cancel'),
+      actions: [
         {
-          text: t('dns.deleteRecord'),
-          style: 'destructive',
+          label: t('dns.deleteRecord'),
+          destructive: true,
           onPress: () => {
             setSaving(true);
             void deleteDnsRecord(bearer, params.zoneId, record.id)
@@ -191,7 +204,7 @@ export default function ZoneDns() {
           },
         },
       ],
-    );
+    });
   };
 
   const inputStyle = [
@@ -199,10 +212,71 @@ export default function ZoneDns() {
     { backgroundColor: colors.searchBg, color: colors.text },
   ];
 
+  const recordKey = useCallback((record: CfDnsRecord) => record.id, []);
+
+  const renderRecord = useCallback(
+    ({ item, index }: ListRenderItemInfo<CfDnsRecord>) => {
+      const color = typeColors[item.type] ?? accent.gray;
+      const last = index === (records?.length ?? 0) - 1;
+      return (
+        <CardRow first={index === 0} last={last}>
+          <ListRow
+            chevron={false}
+            last={last}
+            onPress={() => openEditor(item)}
+            testID={`dns-record-${item.id}`}
+            right={
+              <Cloud
+                accessibilityLabel={
+                  item.proxied ? t('dns.proxied') : t('dns.dnsOnly')
+                }
+                color={item.proxied ? accent.orange : label(mode, 0.25)}
+                size={15}
+              />
+            }
+            left={
+              <View style={styles.row}>
+                <View
+                  style={[
+                    styles.typeBadge,
+                    { backgroundColor: tint(color, '22') },
+                  ]}
+                >
+                  <Text style={[styles.typeText, { color }]}>{item.type}</Text>
+                </View>
+                <View style={styles.copy}>
+                  <Text
+                    numberOfLines={2}
+                    style={[styles.name, { color: colors.text }]}
+                  >
+                    {item.name}
+                  </Text>
+                  <Text
+                    numberOfLines={4}
+                    style={[styles.value, { color: label(mode, 0.4) }]}
+                  >
+                    {item.content}
+                  </Text>
+                </View>
+              </View>
+            }
+          />
+        </CardRow>
+      );
+    },
+    [colors.text, mode, openEditor, records?.length, t],
+  );
+
   return (
     <ZoneSubpage
       backLabel={params.name ?? t('zone.fallbackTitle')}
       error={error}
+      list={{
+        data: records ?? [],
+        keyExtractor: recordKey,
+        renderItem: renderRecord,
+        empty: <InlineEmpty>{t('dns.empty')}</InlineEmpty>,
+      }}
       loading={!records}
       onRefresh={load}
       headerRight={
@@ -225,66 +299,7 @@ export default function ZoneDns() {
       title={t('zone.svcDns')}
     >
       {records && records.length > 0 ? (
-        <>
-          <SectionLabel>{t('dns.records')}</SectionLabel>
-          <Card>
-            {records.map((record, index) => {
-              const color = typeColors[record.type] ?? accent.gray;
-              return (
-                <ListRow
-                  key={record.id}
-                  chevron={false}
-                  last={index === records.length - 1}
-                  onPress={() => openEditor(record)}
-                  testID={`dns-record-${record.id}`}
-                  right={
-                    <Cloud
-                      accessibilityLabel={
-                        record.proxied ? t('dns.proxied') : t('dns.dnsOnly')
-                      }
-                      color={
-                        record.proxied ? accent.orange : label(mode, 0.25)
-                      }
-                      size={15}
-                    />
-                  }
-                  left={
-                    <View style={styles.row}>
-                      <View
-                        style={[
-                          styles.typeBadge,
-                          { backgroundColor: tint(color, '22') },
-                        ]}
-                      >
-                        <Text style={[styles.typeText, { color }]}>
-                          {record.type}
-                        </Text>
-                      </View>
-                      <View style={styles.copy}>
-                        <Text
-                          numberOfLines={2}
-                          style={[styles.name, { color: colors.text }]}
-                        >
-                          {record.name}
-                        </Text>
-                        <Text
-                          numberOfLines={4}
-                          style={[styles.value, { color: label(mode, 0.4) }]}
-                        >
-                          {record.content}
-                        </Text>
-                      </View>
-                    </View>
-                  }
-                />
-              );
-            })}
-          </Card>
-        </>
-      ) : records ? (
-        <InlineEmpty>
-          {t('dns.empty')}
-        </InlineEmpty>
+        <SectionLabel>{t('dns.records')}</SectionLabel>
       ) : null}
 
       <Modal
@@ -499,27 +514,25 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   deleteLabel: {
+    ...fontFace('headline', '400'),
     color: accent.red,
-    fontSize: 17,
-    fontWeight: '400',
   },
   fieldError: {
+    ...fontFace('subhead'),
     color: accent.red,
-    fontSize: 13,
     marginTop: 6,
     paddingHorizontal: 16,
   },
   fieldLabel: {
-    fontSize: 12,
-    fontWeight: '500',
+    ...fontFace('footnote', '500'),
     marginBottom: 6,
     marginTop: 14,
     paddingHorizontal: 16,
     textTransform: 'uppercase',
   },
   input: {
+    ...fontFace('headline', '400'),
     borderRadius: 10,
-    fontSize: 17,
     marginHorizontal: 16,
     minHeight: 44,
     paddingHorizontal: 12,
@@ -534,8 +547,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   name: {
-    fontSize: 16,
-    fontWeight: '500',
+    ...fontFace('bodyLarge', '500'),
   },
   row: {
     alignItems: 'center',
@@ -553,9 +565,8 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   saveLabel: {
+    ...fontFace('headline'),
     color: foreground.onAccent,
-    fontSize: 17,
-    fontWeight: '600',
   },
   sheet: {
     borderTopLeftRadius: 20,
@@ -579,8 +590,7 @@ const styles = StyleSheet.create({
     width: 36,
   },
   sheetTitle: {
-    fontSize: 17,
-    fontWeight: '600',
+    ...fontFace('headline'),
     paddingHorizontal: 16,
   },
   toggleWrap: {
@@ -593,8 +603,7 @@ const styles = StyleSheet.create({
     width: 52,
   },
   typeText: {
-    fontSize: 12,
-    fontWeight: '700',
+    ...fontFace('footnote', '700'),
   },
   typePill: {
     borderRadius: 17,
@@ -604,8 +613,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   typePillText: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...fontFace('body', '600'),
   },
   typePills: {
     gap: 8,

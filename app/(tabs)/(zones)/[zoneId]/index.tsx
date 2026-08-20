@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -40,6 +39,7 @@ import {
   getConnectionBearer,
   invalidateZonesSnapshot,
 } from '@/src/cloudflare/resources';
+import { confirmPurgeCache } from '@/src/cloudflare/zoneActions';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import {
   AccountChip,
@@ -47,12 +47,13 @@ import {
   ListRow,
   Pill,
   SectionLabel,
+  showActionMenu,
   useToast,
   zonePillStatus,
 } from '@/src/components/ui';
 import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, foreground, label } from '@/src/theme/tokens';
+import { accent, fontFace, foreground, label } from '@/src/theme/tokens';
 import { compactNumber } from '@/src/utils/format';
 
 const sslLabels: Record<string, string> = {
@@ -140,17 +141,12 @@ export default function ZoneDetail() {
   );
 
   const confirmPurge = () => {
-    Alert.alert(t('zone.purgeCache'), t('zone.purgeConfirm'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('zone.purgeCache'),
-        onPress: () =>
-          runAction(async () => {
-            await purgeZoneCache(bearerRef.current ?? '', params.zoneId);
-            showToast(t('zone.purgeDone'));
-          }),
-      },
-    ]);
+    confirmPurgeCache(t, zone?.name, () =>
+      runAction(async () => {
+        await purgeZoneCache(bearerRef.current ?? '', params.zoneId);
+        showToast(t('zone.purgeDone'));
+      }),
+    );
   };
 
   const confirmPauseToggle = () => {
@@ -159,15 +155,17 @@ export default function ZoneDetail() {
     }
     const pausing = !zone.paused;
     const title = pausing ? t('zone.pauseZone') : t('zone.resumeZone');
-    Alert.alert(
+    showActionMenu({
       title,
-      t(pausing ? 'zone.pauseConfirm' : 'zone.resumeConfirm', {
+      message: t(pausing ? 'zone.pauseConfirm' : 'zone.resumeConfirm', {
         name: zone.name,
       }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
+      cancelLabel: t('common.cancel'),
+      actions: [
         {
-          text: title,
+          label: title,
+          // Pausing takes the zone off Cloudflare; resuming only restores it.
+          destructive: pausing,
           onPress: () =>
             runAction(async () => {
               const updated = await setZonePaused(
@@ -182,35 +180,33 @@ export default function ZoneDetail() {
             }),
         },
       ],
-    );
+    });
   };
 
   const confirmRemove = () => {
     if (!zone) {
       return;
     }
-    Alert.alert(
-      t('zone.removeZone'),
-      t('zone.removeConfirm', { name: zone.name }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
+    showActionMenu({
+      title: t('zone.removeZone'),
+      message: t('zone.removeConfirm', { name: zone.name }),
+      cancelLabel: t('common.cancel'),
+      actions: [
         {
-          text: t('zone.removeZone'),
-          style: 'destructive',
+          label: t('zone.removeZone'),
+          destructive: true,
           onPress: () =>
             runAction(async () => {
               await deleteZone(bearerRef.current ?? '', params.zoneId);
               invalidateZonesSnapshot();
               invalidateAnalyticsSnapshot();
-              // The range cache keys on the window only, so a stale entry
-              // would keep aggregating the zone that was just removed.
               invalidateZonesRangeSnapshot();
               showToast(t('zone.removeDone'));
               router.back();
             }),
         },
       ],
-    );
+    });
   };
 
   const title = zone?.name ?? params.name ?? t('zone.fallbackTitle');
@@ -501,10 +497,10 @@ export default function ZoneDetail() {
 
 const styles = StyleSheet.create({
   account: {
-    fontSize: 15,
+    ...fontFace('body'),
   },
   actionLabel: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   backButton: {
     alignItems: 'center',
@@ -516,13 +512,13 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   backLabel: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   content: {},
   error: {
+    ...fontFace('body'),
     color: accent.red,
-    fontSize: 15,
     marginTop: 12,
     paddingHorizontal: 16,
   },
@@ -530,14 +526,14 @@ const styles = StyleSheet.create({
     marginTop: 48,
   },
   nameServer: {
+    ...fontFace('subhead'),
     fontFamily: 'Menlo',
-    fontSize: 13,
   },
   rowLabel: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   rowValue: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   safeArea: {
     flex: 1,
@@ -555,11 +551,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   serviceStat: {
-    fontSize: 15,
+    ...fontFace('body'),
     fontVariant: ['tabular-nums'],
   },
   serviceTitle: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   statusRow: {
     alignItems: 'center',
@@ -576,8 +572,7 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   trafficValue: {
-    fontSize: 17,
+    ...fontFace('headline'),
     fontVariant: ['tabular-nums'],
-    fontWeight: '600',
   },
 });

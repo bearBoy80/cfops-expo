@@ -146,6 +146,7 @@ beforeEach(() => {
     ]),
     kv: new Map(),
     d1: new Map(),
+   permissionDenied: false,
   });
 });
 

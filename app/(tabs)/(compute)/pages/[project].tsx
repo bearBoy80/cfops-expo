@@ -46,8 +46,9 @@ import {
   type Status,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useSequencer, type IfCurrent } from '@/src/state/useSequencedLoad';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label } from '@/src/theme/tokens';
+import { accent, font, fontFace, label } from '@/src/theme/tokens';
 import { compactNumber, relativeTime } from '@/src/utils/format';
 
 const HOSTNAME_PATTERN =
@@ -103,18 +104,19 @@ export default function PagesProjectDetail() {
   );
   const [domainError, setDomainError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const sequence = useSequencer();
 
   const load = useCallback(
-    async (resolved: string) => {
+    async (resolved: string, ifCurrent: IfCurrent) => {
       await Promise.all([
         listPagesDeployments(resolved, params.accountId, params.project).then(
-          setDeployments,
+          ifCurrent(setDeployments),
         ),
         listPagesDomains(resolved, params.accountId, params.project)
-          .then(setDomains)
-          .catch(() => setDomains([])),
+          .then(ifCurrent(setDomains))
+          .catch(() => ifCurrent(setDomains)([])),
         getPagesPreviewSetting(resolved, params.accountId, params.project)
-          .then(setPreviewSetting)
+          .then(ifCurrent(setPreviewSetting))
           .catch(() => {}),
         params.productionScriptName
           ? fetchPagesFunctionMetrics(
@@ -122,7 +124,7 @@ export default function PagesProjectDetail() {
               params.accountId,
               params.productionScriptName,
             )
-              .then(setFunctionMetrics)
+              .then(ifCurrent(setFunctionMetrics))
               .catch(() => {})
           : Promise.resolve(),
       ]);
@@ -130,16 +132,26 @@ export default function PagesProjectDetail() {
     [params.accountId, params.project, params.productionScriptName],
   );
 
-  const refresh = useCallback(async () => {
-    setError(null);
-    try {
-      const resolved = await getBearerForConnection(params.connectionId);
-      setBearer(resolved);
-      await load(resolved);
-    } catch (cause) {
-      setError(cloudflareErrorMessage(cause));
-    }
-  }, [load, params.connectionId]);
+  /** Re-reads the project blocks after a deployment or setting change. */
+  const reload = useCallback(
+    (resolved: string) => sequence((ifCurrent) => load(resolved, ifCurrent)),
+    [load, sequence],
+  );
+
+  const refresh = useCallback(
+    () =>
+      sequence(async (ifCurrent) => {
+        ifCurrent(setError)(null);
+        try {
+          const resolved = await getBearerForConnection(params.connectionId);
+          ifCurrent(setBearer)(resolved);
+          await load(resolved, ifCurrent);
+        } catch (cause) {
+          ifCurrent(setError)(cloudflareErrorMessage(cause));
+        }
+      }),
+    [load, params.connectionId, sequence],
+  );
 
   useEffect(() => {
     void refresh();
@@ -174,7 +186,7 @@ export default function PagesProjectDetail() {
           // The list row shows the latest deployment status and commit.
           invalidateComputeSnapshot();
           showToast(doneMessage);
-          await load(bearer);
+          await reload(bearer);
         })
         .catch((cause) => {
           showToast(cloudflareErrorMessage(cause), 'error');
@@ -263,7 +275,7 @@ export default function PagesProjectDetail() {
         invalidateComputeSnapshot();
         setDomainSheet(null);
         showToast(t('compute.domainAdded'));
-        await load(bearer);
+        await reload(bearer);
       })
       .catch((cause) => {
         // Toasts render below RN modals, so surface the failure inline.
@@ -295,7 +307,7 @@ export default function PagesProjectDetail() {
               .then(async () => {
                 invalidateComputeSnapshot();
                 showToast(t('compute.domainRemoved'));
-                await load(bearer);
+                await reload(bearer);
               })
               .catch((cause) => {
                 showToast(cloudflareErrorMessage(cause), 'error');
@@ -605,8 +617,8 @@ export default function PagesProjectDetail() {
 
 const styles = StyleSheet.create({
   addRow: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   chartCard: {
     marginTop: 10,
@@ -619,7 +631,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   empty: {
-    fontSize: 14,
+    ...fontFace('bodySmall'),
   },
   emptyBlock: {
     marginTop: 8,
@@ -627,33 +639,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   env: {
+    ...fontFace('body', '500'),
     flexShrink: 1,
-    fontSize: 15,
-    fontWeight: '500',
   },
   fieldError: {
+    ...fontFace('subhead'),
     color: accent.red,
-    fontSize: 13,
     marginTop: 6,
     paddingHorizontal: 16,
   },
   fieldLabel: {
-    fontSize: 12,
-    fontWeight: '500',
+    ...fontFace('footnote', '500'),
     marginBottom: 6,
     marginTop: 14,
     paddingHorizontal: 16,
     textTransform: 'uppercase',
   },
   footnote: {
-    fontSize: 13,
-    lineHeight: 18,
+    ...font('subhead'),
     marginTop: 8,
     paddingHorizontal: 32,
   },
   input: {
+    ...fontFace('headline', '400'),
     borderRadius: 10,
-    fontSize: 17,
     marginHorizontal: 16,
     minHeight: 44,
     paddingHorizontal: 12,
@@ -664,15 +673,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   mono: {
+    ...fontFace('subhead', '600'),
     fontFamily: 'Menlo',
-    fontSize: 13,
-    fontWeight: '600',
   },
   rowLabel: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   rowValue: {
-    fontSize: 15,
+    ...fontFace('body'),
     marginLeft: 12,
     maxWidth: 200,
   },
@@ -683,9 +691,8 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   sheetAction: {
+    ...fontFace('headline'),
     color: accent.orange,
-    fontSize: 17,
-    fontWeight: '600',
   },
   sheetBackdrop: {
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -696,8 +703,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheetCancel: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   sheetHandle: {
     alignSelf: 'center',
@@ -720,14 +727,13 @@ const styles = StyleSheet.create({
     minWidth: 60,
   },
   sheetTitle: {
+    ...fontFace('headline'),
     flex: 1,
-    fontSize: 17,
-    fontWeight: '600',
     textAlign: 'center',
   },
   sub: {
+    ...fontFace('caption'),
     fontFamily: 'Menlo',
-    fontSize: 11,
     marginTop: 3,
   },
   tileRow: {
@@ -737,7 +743,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   time: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     fontVariant: ['tabular-nums'],
   },
   titleLine: {

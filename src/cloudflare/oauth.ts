@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 import {
   exchangeCodeAsync,
   refreshAsync,
+  TokenError,
   type AuthRequest,
   type AuthSessionResult,
   type DiscoveryDocument,
@@ -155,7 +156,9 @@ export async function authorize(
   }
 
   if (__DEV__) {
-    console.log('[oauth] session result:', result.type, JSON.stringify(result));
+    // Only the outcome: the callback url carries the authorization code, and
+    // dev consoles end up in shared terminals and screen recordings.
+    console.log('[oauth] session result:', result.type);
   }
 
   if (result.type !== 'success') {
@@ -225,7 +228,18 @@ export async function exchangeAuthorizationCode(
       },
       discovery,
     );
-  } catch {
+  } catch (cause) {
+    // A `TokenError` means the token endpoint answered and rejected us — a
+    // spent or expired code, a redirect that does not match the authorization
+    // request, a bad PKCE verifier. Only a request that never got an answer is
+    // a connectivity problem, and calling the two the same thing sends the
+    // user off to check their signal over an authorization they can just retry.
+    if (cause instanceof TokenError) {
+      throw new CloudflareApiError(
+        'oauth-failed',
+        cause.params.error_description,
+      );
+    }
     throw new CloudflareApiError('network');
   }
 
@@ -255,8 +269,15 @@ export async function refreshOauthTokens(
       { clientId: config.clientId, refreshToken },
       discovery,
     );
-  } catch {
-    throw new CloudflareApiError('session-expired');
+  } catch (cause) {
+    // Only a rejection from the token endpoint means the grant is really gone.
+    // A request that never completed leaves the refresh token perfectly usable,
+    // so reporting that as an expired session would walk the user through a
+    // reconnect that a working connection would have made unnecessary.
+    if (cause instanceof TokenError) {
+      throw new CloudflareApiError('session-expired');
+    }
+    throw new CloudflareApiError('network');
   }
 
   return toOauthTokens(response);

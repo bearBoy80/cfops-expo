@@ -17,7 +17,7 @@ import { ZoneSubpage } from '@/src/components/ZoneSubpage';
 import { Card, SectionLabel, InlineEmpty } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, hairline, label, tint } from '@/src/theme/tokens';
+import { accent, fontFace, hairline, label, tint } from '@/src/theme/tokens';
 import { compactNumber, formatBytes, preciseTens } from '@/src/utils/format';
 
 function cacheRatio(zone: { bytes: number; cachedBytes: number }): number | null {
@@ -327,13 +327,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   metricLabel: {
-    fontSize: 11,
+    ...fontFace('caption'),
     marginTop: 1,
   },
   metricValue: {
-    fontSize: 15,
+    ...fontFace('body', '600'),
     fontVariant: ['tabular-nums'],
-    fontWeight: '600',
   },
   metrics: {
     flexDirection: 'row',
@@ -341,7 +340,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   heroLabel: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     marginBottom: 16,
     marginTop: 4,
   },
@@ -352,12 +351,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   name: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...fontFace('bodyLarge', '600'),
   },
   visitors: {
-    fontSize: 13,
-    fontWeight: '600',
+    ...fontFace('subhead', '600'),
     marginTop: 3,
   },
   rowBody: {
@@ -382,7 +379,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   summaryLabel: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 3,
   },
   summaryStat: {
@@ -393,9 +390,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   summaryValue: {
-    fontSize: 22,
+    ...fontFace('title'),
     fontVariant: ['tabular-nums'],
-    fontWeight: '700',
-    letterSpacing: 0.2,
   },
 });

@@ -1,3 +1,4 @@
+import { CloudflareApiError } from '../rest/client';
 import { createKeyedTtlCache } from '../ttlCache';
 import { fillHourlySeries, last24hIso, runAccountQuery } from './client';
 
@@ -216,6 +217,12 @@ export interface StorageMetrics {
   kv: Map<string, KvNamespaceMetrics>;
   /** Keyed by database uuid. */
   d1: Map<string, D1DatabaseMetrics>;
+  /**
+   * True when a dataset was refused rather than empty. Nothing in the numbers
+   * distinguishes "this bucket is idle" from "this token cannot read
+   * analytics", so the screen has to be told which of the two it is rendering.
+   */
+  permissionDenied: boolean;
 }
 
 const R2_STORAGE_QUERY = `query ($account: string, $since: Time) {
@@ -306,6 +313,18 @@ async function fetchStorageMetricsUncached(
     r2: new Map(),
     kv: new Map(),
     d1: new Map(),
+    permissionDenied: false,
+  };
+
+  /**
+   * A refused dataset is a scope the user can grant; anything else (a plan
+   * without the product, a transient failure) really is nothing to show, so
+   * only the former is worth surfacing.
+   */
+  const ignore = (cause: unknown) => {
+    if (cause instanceof CloudflareApiError && cause.code === 'forbidden') {
+      metrics.permissionDenied = true;
+    }
   };
 
   const r2Bucket = (name: string): R2BucketMetrics => {
@@ -355,7 +374,7 @@ async function fetchStorageMetricsUncached(
           }
         }
       })
-      .catch(() => {}),
+      .catch(ignore),
     runAccountQuery<{
       r2OperationsAdaptiveGroups?: {
         sum?: { requests?: number };
@@ -379,7 +398,7 @@ async function fetchStorageMetricsUncached(
           }
         }
       })
-      .catch(() => {}),
+      .catch(ignore),
     runAccountQuery<{
       kvStorageAdaptiveGroups?: {
         max?: { keyCount?: number; byteCount?: number };
@@ -405,7 +424,7 @@ async function fetchStorageMetricsUncached(
           }
         }
       })
-      .catch(() => {}),
+      .catch(ignore),
     runAccountQuery<{
       kvOperationsAdaptiveGroups?: {
         sum?: { requests?: number };
@@ -429,7 +448,7 @@ async function fetchStorageMetricsUncached(
           }
         }
       })
-      .catch(() => {}),
+      .catch(ignore),
     runAccountQuery<{
       d1AnalyticsAdaptiveGroups?: {
         sum?: { readQueries?: number; writeQueries?: number };
@@ -453,7 +472,7 @@ async function fetchStorageMetricsUncached(
           }
         }
       })
-      .catch(() => {}),
+      .catch(ignore),
   ]);
 
   return metrics;

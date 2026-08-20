@@ -509,3 +509,58 @@ test('storage metrics are cached per account until invalidated', async () => {
   await fetchStorageMetrics('bearer-1', 'acc-1');
   expect(fetchMock).toHaveBeenCalledTimes(perAccount * 2);
 });
+
+describe('graphql failures carry a translatable code', () => {
+  test('an unreachable endpoint is a network failure', async () => {
+    setFetch(jest.fn().mockRejectedValue(new TypeError('Network request failed')));
+
+    await expect(
+      fetchWorkerMetrics('bearer-1', 'acc-1'),
+    ).rejects.toMatchObject({ code: 'network' });
+  });
+
+  test('a rejected status maps to the matching code', async () => {
+    setFetch(
+      jest.fn().mockResolvedValue({
+        status: 403,
+        json: () => Promise.resolve({}),
+      }),
+    );
+
+    await expect(
+      fetchWorkerMetrics('bearer-1', 'acc-1'),
+    ).rejects.toMatchObject({ code: 'forbidden' });
+  });
+
+  test('a missing analytics scope reads as forbidden, not as an outage', async () => {
+    // The analytics API answers 200 with an errors array, so the message is
+    // the only thing that distinguishes a scope problem from a real failure.
+    setFetch(
+      jest.fn().mockResolvedValue({
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            data: null,
+            errors: [{ message: 'unauthorized to access this dataset' }],
+          }),
+      }),
+    );
+
+    await expect(
+      fetchWorkerMetrics('bearer-1', 'acc-1'),
+    ).rejects.toMatchObject({ code: 'forbidden' });
+  });
+
+  test('an edge error page is an api failure rather than a crash', async () => {
+    setFetch(
+      jest.fn().mockResolvedValue({
+        status: 502,
+        json: () => Promise.reject(new SyntaxError('Unexpected token <')),
+      }),
+    );
+
+    await expect(
+      fetchWorkerMetrics('bearer-1', 'acc-1'),
+    ).rejects.toMatchObject({ code: 'api' });
+  });
+});

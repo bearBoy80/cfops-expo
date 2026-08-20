@@ -25,7 +25,7 @@ import {
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label, spacing } from '@/src/theme/tokens';
+import { accent, fontFace, label, spacing } from '@/src/theme/tokens';
 import { compactNumber, formatBytes, preciseTens } from '@/src/utils/format';
 
 type Range = '24h' | '7d' | '30d';
@@ -220,12 +220,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   chartSub: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginBottom: 12,
   },
   chartTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...fontFace('body', '600'),
   },
   chartValue: {
     fontSize: 28,
@@ -238,11 +237,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   rowLabel: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   rowValue: {
-    fontSize: 17,
+    ...fontFace('headline'),
     fontVariant: ['tabular-nums'],
-    fontWeight: '600',
   },
 });

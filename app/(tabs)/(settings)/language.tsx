@@ -12,7 +12,7 @@ import {
 import { Card, ListRow } from '@/src/components/ui';
 import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label } from '@/src/theme/tokens';
+import { accent, fontFace, label } from '@/src/theme/tokens';
 
 const options: AppLanguage[] = ['system', 'en', 'zh-Hans'];
 
@@ -119,16 +119,15 @@ const styles = StyleSheet.create({
     paddingTop: 6,
   },
   backLabel: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   content: {},
   optionCopy: {
     flex: 1,
   },
   optionLabel: {
-    fontSize: 15,
-    fontWeight: '500',
+    ...fontFace('body', '500'),
   },
   optionRow: {
     alignItems: 'center',
@@ -136,22 +135,20 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   optionSub: {
-    fontSize: 12,
+    ...fontFace('footnote'),
     marginTop: 1,
   },
   safeArea: {
     flex: 1,
   },
   subtitle: {
-    fontSize: 13,
+    ...fontFace('subhead'),
     marginBottom: 12,
     marginTop: 2,
     paddingHorizontal: 16,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: -0.5,
+    ...fontFace('largeTitle'),
     paddingHorizontal: 16,
     paddingTop: 4,
   },

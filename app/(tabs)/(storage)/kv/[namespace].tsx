@@ -45,8 +45,9 @@ import {
   InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useSequencer } from '@/src/state/useSequencedLoad';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, foreground, label } from '@/src/theme/tokens';
+import { accent, fontFace, foreground, label } from '@/src/theme/tokens';
 import { compactNumber, formatBytes } from '@/src/utils/format';
 import { haptics } from '@/src/utils/haptics';
 
@@ -132,52 +133,59 @@ export default function KvNamespaceDetail() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const sequence = useSequencer();
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const resolved = await getBearerForConnection(params.connectionId);
-      setBearer(resolved);
-      await Promise.all([
-        listKvKeys(resolved, params.accountId, params.namespace)
-          .then(async (items) => {
-            setKeys(items);
-            try {
-              const entries = await getKvEntries(
-                resolved,
-                params.accountId,
-                params.namespace,
-                items.slice(0, PREVIEW_KEY_LIMIT).map((item) => item.name),
-              );
-              setPreviews(
-                new Map(
-                  [...entries].map(([key, entry]) => [
-                    key,
-                    previewOf(entry.value),
-                  ]),
-                ),
-              );
-            } catch {
-              // Reading values needs a permission listing does not, so the key
-              // list stays useful on its own.
-              setPreviews(null);
-            }
-          })
-          .catch(() => {
-            setKeys([]);
-          }),
-        fetchStorageMetrics(resolved, params.accountId)
-          .then((accountMetrics) => {
-            setMetrics(accountMetrics.kv.get(params.namespace) ?? null);
-          })
-          .catch(() => {}),
-      ]);
-    } catch (cause) {
-      setError(cloudflareErrorMessage(cause));
-    } finally {
-      setLoading(false);
-    }
-  }, [params.accountId, params.connectionId, params.namespace]);
+  const load = useCallback(
+    () =>
+      sequence(async (ifCurrent) => {
+        ifCurrent(setError)(null);
+        try {
+          const resolved = await getBearerForConnection(params.connectionId);
+          ifCurrent(setBearer)(resolved);
+          await Promise.all([
+            listKvKeys(resolved, params.accountId, params.namespace)
+              .then(async (items) => {
+                ifCurrent(setKeys)(items);
+                try {
+                  const entries = await getKvEntries(
+                    resolved,
+                    params.accountId,
+                    params.namespace,
+                    items.slice(0, PREVIEW_KEY_LIMIT).map((item) => item.name),
+                  );
+                  ifCurrent(setPreviews)(
+                    new Map(
+                      [...entries].map(([key, entry]) => [
+                        key,
+                        previewOf(entry.value),
+                      ]),
+                    ),
+                  );
+                } catch {
+                  // Reading values needs a permission listing does not, so the
+                  // key list stays useful on its own.
+                  ifCurrent(setPreviews)(null);
+                }
+              })
+              .catch(() => {
+                ifCurrent(setKeys)([]);
+              }),
+            fetchStorageMetrics(resolved, params.accountId)
+              .then((accountMetrics) => {
+                ifCurrent(setMetrics)(
+                  accountMetrics.kv.get(params.namespace) ?? null,
+                );
+              })
+              .catch(() => {}),
+          ]);
+        } catch (cause) {
+          ifCurrent(setError)(cloudflareErrorMessage(cause));
+        } finally {
+          ifCurrent(setLoading)(false);
+        }
+      }),
+    [params.accountId, params.connectionId, params.namespace, sequence],
+  );
 
   useEffect(() => {
     void load();
@@ -826,8 +834,8 @@ export default function KvNamespaceDetail() {
 
 const styles = StyleSheet.create({
   addRow: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   checkbox: {
     alignItems: 'center',
@@ -842,18 +850,17 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   deleteLabel: {
+    ...fontFace('headline', '400'),
     color: accent.red,
-    fontSize: 17,
   },
   fieldError: {
+    ...fontFace('subhead'),
     color: accent.red,
-    fontSize: 13,
     marginTop: 6,
     paddingHorizontal: 16,
   },
   fieldLabel: {
-    fontSize: 12,
-    fontWeight: '500',
+    ...fontFace('footnote', '500'),
     marginBottom: 6,
     marginTop: 14,
     paddingHorizontal: 16,
@@ -871,28 +878,28 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   keyInput: {
+    ...fontFace('body'),
     borderRadius: 10,
     fontFamily: 'Menlo',
-    fontSize: 15,
     marginHorizontal: 16,
     minHeight: 44,
     paddingHorizontal: 12,
     paddingVertical: 11,
   },
   keyValue: {
+    ...fontFace('footnote'),
     fontFamily: 'Menlo',
-    fontSize: 12,
     marginTop: 2,
   },
   mono: {
+    ...fontFace('subhead'),
     fontFamily: 'Menlo',
-    fontSize: 13,
   },
   rowLabel: {
-    fontSize: 17,
+    ...fontFace('headline', '400'),
   },
   rowValue: {
-    fontSize: 15,
+    ...fontFace('body'),
   },
   sheet: {
     borderTopLeftRadius: 20,
@@ -901,9 +908,8 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   sheetAction: {
+    ...fontFace('headline'),
     color: accent.orange,
-    fontSize: 17,
-    fontWeight: '600',
   },
   sheetActionDisabled: {
     opacity: 0.35,
@@ -917,8 +923,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheetCancel: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   sheetHandle: {
     alignSelf: 'center',
@@ -941,15 +947,14 @@ const styles = StyleSheet.create({
     minWidth: 60,
   },
   sheetTitle: {
+    ...fontFace('headline'),
     flex: 1,
-    fontSize: 17,
-    fontWeight: '600',
     textAlign: 'center',
   },
   /** Editing puts the key name itself in the title, so it reads as a key. */
   sheetTitleKey: {
+    ...fontFace('body'),
     fontFamily: 'Menlo',
-    fontSize: 15,
   },
   tileRow: {
     flexDirection: 'row',
@@ -958,8 +963,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   toolbarAction: {
+    ...fontFace('bodyLarge'),
     color: accent.orange,
-    fontSize: 16,
   },
   /*
    * Both toolbar sides are text buttons, as iOS toolbars are. A filled
@@ -967,9 +972,8 @@ const styles = StyleSheet.create({
    * and the toolbar is `tabbar`, so only the label would show.
    */
   toolbarDestructive: {
+    ...fontFace('bodyLarge', '600'),
     color: accent.red,
-    fontSize: 16,
-    fontWeight: '600',
   },
   /** Mode controls sit together, away from the destructive action. */
   toolbarGroup: {
@@ -978,9 +982,9 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   valueInput: {
+    ...fontFace('bodySmall'),
     borderRadius: 10,
     fontFamily: 'Menlo',
-    fontSize: 14,
     marginHorizontal: 16,
     // Tall enough that a multi-line value is legible without scrolling.
     minHeight: 132,

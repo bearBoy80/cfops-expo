@@ -69,6 +69,7 @@ beforeEach(() => {
     r2: new Map(),
     kv: new Map(),
     d1: new Map(),
+   permissionDenied: false,
   });
   jest.mocked(listKvKeys).mockResolvedValue([{ name: '1212', expiration: null }]);
   jest.mocked(getKvEntries).mockResolvedValue(

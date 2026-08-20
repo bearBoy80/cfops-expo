@@ -94,6 +94,70 @@ test('keeps the previous refresh token and scope when the server omits them', as
   );
 });
 
+describe('when the keychain write fails', () => {
+  let warn: jest.SpyInstance;
+
+  beforeEach(() => {
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest
+      .mocked(getConnectionOauthTokens)
+      .mockResolvedValue(stored({ expiresAt: Date.now() - HOUR }));
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  test('still hands out the renewed access token', async () => {
+    jest
+      .mocked(updateConnectionOauthTokens)
+      .mockRejectedValue(new Error('keychain busy'));
+
+    // The exchange has already spent the stored refresh token, so throwing
+    // here would ask for a reconnect right after a successful renewal.
+    await expect(getOauthAccessToken('oauth-1')).resolves.toBe('fresh-access');
+  });
+
+  test('renews from the rotated token rather than the dead stored one', async () => {
+    jest
+      .mocked(updateConnectionOauthTokens)
+      .mockRejectedValueOnce(new Error('keychain busy'));
+    // Every grant here is born expired, so the second call has to renew again
+    // and reveals which refresh token it reached for.
+    jest.mocked(refreshOauthTokens).mockResolvedValue({
+      accessToken: 'fresh-access',
+      refreshToken: 'rotated-refresh',
+      expiresAt: Date.now() - 1,
+    });
+
+    await getOauthAccessToken('oauth-1');
+    await getOauthAccessToken('oauth-1');
+
+    expect(refreshOauthTokens).toHaveBeenNthCalledWith(2, 'rotated-refresh');
+    // And the write is retried instead of abandoned.
+    expect(updateConnectionOauthTokens).toHaveBeenCalledTimes(2);
+  });
+
+  test('yields to a grant that later reaches the keychain', async () => {
+    jest
+      .mocked(updateConnectionOauthTokens)
+      .mockRejectedValueOnce(new Error('keychain busy'));
+
+    await getOauthAccessToken('oauth-1');
+
+    // Reconnecting the account stores a new grant under the same id, and the
+    // copy kept in memory must not shadow it.
+    jest
+      .mocked(getConnectionOauthTokens)
+      .mockResolvedValue(stored({ accessToken: 'reconnected-access' }));
+
+    await expect(getOauthAccessToken('oauth-1')).resolves.toBe(
+      'reconnected-access',
+    );
+    expect(refreshOauthTokens).toHaveBeenCalledTimes(1);
+  });
+});
+
 test('shares one renewal across concurrent callers', async () => {
   jest
     .mocked(getConnectionOauthTokens)

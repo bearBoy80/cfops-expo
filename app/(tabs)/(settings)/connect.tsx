@@ -17,7 +17,14 @@ import { AuthTextInput } from '@/src/components/AuthTextInput';
 import { useConnectAccount } from '@/src/cloudflare/useConnectAccount';
 import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, foreground, hairline, label, tint } from '@/src/theme/tokens';
+import {
+  accent,
+  fontFace,
+  foreground,
+  hairline,
+  label,
+  tint,
+} from '@/src/theme/tokens';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -211,8 +218,8 @@ const styles = StyleSheet.create({
     paddingTop: 6,
   },
   backLabel: {
+    ...fontFace('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
   },
   content: {},
   divider: {
@@ -222,15 +229,15 @@ const styles = StyleSheet.create({
     marginVertical: 18,
   },
   dividerLabel: {
-    fontSize: 12,
+    ...fontFace('footnote'),
   },
   dividerLine: {
     flex: 1,
     height: 1,
   },
   error: {
+    ...fontFace('subhead'),
     color: accent.red,
-    fontSize: 13,
     marginTop: 10,
     paddingHorizontal: 4,
   },
@@ -275,9 +282,8 @@ const styles = StyleSheet.create({
     minHeight: 50,
   },
   primaryButtonText: {
+    ...fontFace('bodyLarge', '600'),
     color: foreground.onAccent,
-    fontSize: 16,
-    fontWeight: '600',
   },
   safeArea: {
     flex: 1,
@@ -290,9 +296,8 @@ const styles = StyleSheet.create({
     minHeight: 50,
   },
   secondaryButtonText: {
+    ...fontFace('bodyLarge', '600'),
     color: accent.orange,
-    fontSize: 16,
-    fontWeight: '600',
   },
   subtitle: {
     fontSize: 13,

@@ -1,4 +1,3 @@
-import { Alert } from 'react-native';
 import {
   fireEvent,
   render,
@@ -41,6 +40,11 @@ jest.mock('../cloudflare/resources', () => ({
   getBearerForConnection: jest.fn().mockResolvedValue('bearer-1'),
 }));
 
+jest.mock('../components/ui/actionMenu', () => ({
+  ActionMenuHost: () => null,
+  showActionMenu: jest.fn(),
+}));
+
 jest.mock('../cloudflare/analytics', () => ({
   fetchZoneHourly: jest.fn(),
   fetchZoneFirewallEvents: jest.fn(),
@@ -61,6 +65,10 @@ jest.mock('../cloudflare/api', () => {
     purgeZoneCache: jest.fn(),
   };
 });
+
+const { showActionMenu } = jest.requireMock<{
+  showActionMenu: jest.Mock;
+}>('../components/ui/actionMenu');
 
 const wrap = (children: React.ReactElement) =>
   render(<ThemeProvider>{children}</ThemeProvider>);
@@ -150,7 +158,6 @@ test('blocks saving an invalid record and shows inline field errors', async () =
 });
 
 test('deletes a DNS record from the editor after confirmation', async () => {
-  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   jest.mocked(listDnsRecords).mockResolvedValue([
     {
       id: 'rec-1',
@@ -171,11 +178,11 @@ test('deletes a DNS record from the editor after confirmation', async () => {
   fireEvent.press(screen.getByTestId('dns-record-rec-1'));
   fireEvent.press(screen.getByTestId('dns-delete'));
 
-  const calls = jest.mocked(Alert.alert).mock.calls;
-  const confirm = calls[calls.length - 1][2]?.find(
-    (button) => button.style !== 'cancel',
-  );
-  confirm?.onPress?.();
+  const calls = showActionMenu.mock.calls;
+  const options = calls[calls.length - 1][0] as {
+    actions: { onPress: () => void }[];
+  };
+  options.actions[0].onPress();
 
   await waitFor(() =>
     expect(deleteDnsRecord).toHaveBeenCalledWith('bearer-1', 'zone-1', 'rec-1'),

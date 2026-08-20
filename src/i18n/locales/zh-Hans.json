@@ -389,6 +389,7 @@
     "noBuckets": "已连接账号下暂无 R2 存储桶。",
     "noNamespaces": "已连接账号下暂无 KV 命名空间。",
     "noDatabases": "已连接账号下暂无 D1 数据库。",
+    "metricsNoPerm": "用量数据需要 Account · Account Analytics · Read 权限。缺少该权限时，所有存储桶、命名空间和数据库都会显示为空。请为已连接的 Token 添加该权限后下拉刷新。",
     "searchR2": "搜索存储桶…",
     "searchKv": "搜索命名空间…",
     "searchD1": "搜索数据库…",

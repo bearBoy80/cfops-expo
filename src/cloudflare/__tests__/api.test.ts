@@ -15,6 +15,7 @@ import {
   setZoneSecurityLevel,
   listAccounts,
   listD1Databases,
+  listDnsRecords,
   listKvNamespaces,
   listPagesDomains,
   listPagesProjects,
@@ -212,6 +213,113 @@ describe('listZones', () => {
         nameServers: [],
       },
     ]);
+  });
+
+  test('walks every page instead of stopping at the first 50', async () => {
+    // An account with more zones than one page holds: without pagination the
+    // Zones tab would silently show only the first page, and the search over
+    // it filters an already-truncated list.
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          result: [{ id: 'zone-1', name: 'a.com', status: 'active' }],
+          result_info: { total_count: 3, per_page: 1 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          result: [{ id: 'zone-2', name: 'b.com', status: 'active' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          result: [{ id: 'zone-3', name: 'c.com', status: 'active' }],
+        }),
+      );
+
+    const zones = await listZones('secret');
+
+    expect(zones.map((zone) => zone.id)).toEqual([
+      'zone-1',
+      'zone-2',
+      'zone-3',
+    ]);
+    expect(mockFetch.mock.calls[0][0]).toContain('/zones?page=1&per_page=50');
+    expect(mockFetch.mock.calls[1][0]).toContain('/zones?page=2&per_page=50');
+    expect(mockFetch.mock.calls[2][0]).toContain('/zones?page=3&per_page=50');
+  });
+
+  test('stops after one request when the first page is the only one', async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        result: [{ id: 'zone-1', name: 'a.com', status: 'active' }],
+        result_info: { total_count: 1, per_page: 50 },
+      }),
+    );
+
+    await listZones('secret');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('listDnsRecords', () => {
+  test('walks every page so the list matches the zone record count', async () => {
+    // The zone overview shows `countDnsRecords` (the true total), so a list
+    // capped at one page would contradict the number the user just saw and
+    // leave the remaining records unreachable.
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          result: [{ id: 'rec-1', type: 'A', name: 'a.acme.com' }],
+          result_info: { total_count: 2, per_page: 1 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          result: [
+            {
+              id: 'rec-2',
+              type: 'CNAME',
+              name: 'www.acme.com',
+              content: 'acme.com',
+              proxied: true,
+              ttl: 300,
+            },
+          ],
+        }),
+      );
+
+    await expect(listDnsRecords('secret', 'zone-1')).resolves.toEqual([
+      {
+        id: 'rec-1',
+        type: 'A',
+        name: 'a.acme.com',
+        content: '',
+        proxied: false,
+        ttl: 1,
+      },
+      {
+        id: 'rec-2',
+        type: 'CNAME',
+        name: 'www.acme.com',
+        content: 'acme.com',
+        proxied: true,
+        ttl: 300,
+      },
+    ]);
+    expect(mockFetch.mock.calls[0][0]).toContain(
+      '/zones/zone-1/dns_records?page=1&per_page=100',
+    );
+    expect(mockFetch.mock.calls[1][0]).toContain(
+      '/zones/zone-1/dns_records?page=2&per_page=100',
+    );
   });
 });
 
