@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Cloud, ChevronLeft, KeyRound, ShieldCheck } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -34,6 +34,7 @@ export default function ConnectAccountScreen() {
   const { mode, colors } = useTheme();
   const bottomInset = useTabBarInset();
   const [token, setToken] = useState('');
+  const [connected, setConnected] = useState(false);
   const {
     busy,
     canStartOauth,
@@ -42,17 +43,31 @@ export default function ConnectAccountScreen() {
     connectWithToken,
     error,
     oauthConfigured,
-  } = useConnectAccount(() => {
-    // The OAuth sheet can outlive this screen, so the history may be gone by
-    // the time the credential lands. Leaving the user on a screen that has
-    // already done its job reads as a silent failure, so fall back to an
-    // explicit destination rather than doing nothing.
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/(tabs)/(settings)');
-    }
-  });
+  } = useConnectAccount(() => setConnected(true));
+
+  /*
+   * Leaving is driven by "the credential is bound" rather than done once from
+   * the callback that reports it, because a single imperative call is not
+   * reliable here. The credential lands seconds later, and by then the router
+   * may quietly discard the request: queued actions are dropped when the
+   * navigator is not mounted, and a bare `back()` applies to whichever
+   * navigator holds focus, which is not necessarily this stack any more. The
+   * screen then sits on top of the settings tab forever with nothing to
+   * indicate anything went wrong.
+   *
+   * Re-running on focus makes it self-correcting: a request that never landed
+   * is reissued the next time the screen is actually on screen. `dismissTo`
+   * names the destination instead of a step backwards, so it resolves against
+   * the route tree rather than the current focus.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      if (!connected) {
+        return;
+      }
+      router.dismissTo('/(tabs)/(settings)');
+    }, [connected, router]),
+  );
 
   const canSubmitToken = token.trim().length > 0 && busy === null;
   const submitToken = () => void connectWithToken(token);

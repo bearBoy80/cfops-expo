@@ -50,6 +50,20 @@ export function useConnectAccount(onConnected: () => void): ConnectAccount {
 
   const canStartOauth = Boolean(oauthConfig && request) && busy === null;
 
+  // Runs outside the binding try/catch: the credential is in the keychain by
+  // now, so a callback that throws is not a binding failure and must not be
+  // shown as one — the user would rebind something that is already there. It
+  // must not escape either, since callers start these actions with `void`.
+  const notifyConnected = () => {
+    try {
+      onConnected();
+    } catch (cause) {
+      if (__DEV__) {
+        console.warn('[connect] post-connect callback threw', cause);
+      }
+    }
+  };
+
   const connectWithOauth = async () => {
     if (!canStartOauth || !request) {
       return;
@@ -57,6 +71,7 @@ export function useConnectAccount(onConnected: () => void): ConnectAccount {
 
     setBusy('oauth');
     setError(null);
+    let connected = false;
     try {
       const result = await authorize(request);
       // Backing out of the sheet is not a failure worth reporting.
@@ -67,11 +82,15 @@ export function useConnectAccount(onConnected: () => void): ConnectAccount {
       const identity = await fetchOauthIdentity(tokens.accessToken);
       await addOauthConnection(tokens, identity);
       invalidateAllSnapshots();
-      onConnected();
+      connected = true;
     } catch (cause) {
       setError(cloudflareErrorMessage(cause));
     } finally {
       setBusy(null);
+    }
+
+    if (connected) {
+      notifyConnected();
     }
   };
 
@@ -82,14 +101,19 @@ export function useConnectAccount(onConnected: () => void): ConnectAccount {
 
     setBusy('token');
     setError(null);
+    let connected = false;
     try {
       await addConnection(token);
       invalidateAllSnapshots();
-      onConnected();
+      connected = true;
     } catch (cause) {
       setError(cloudflareErrorMessage(cause));
     } finally {
       setBusy(null);
+    }
+
+    if (connected) {
+      notifyConnected();
     }
   };
 

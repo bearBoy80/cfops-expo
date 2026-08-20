@@ -1,11 +1,15 @@
+import { useEffect } from 'react';
 import {
+  act,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
 } from '@testing-library/react-native';
 import ConnectAccountScreen from '@/app/(tabs)/(settings)/connect';
 import { CloudflareApiError } from '../cloudflare/api';
+import { useConnectAccount } from '../cloudflare/useConnectAccount';
 import { ConnectStep } from '../onboarding/ConnectStep';
 import {
   addConnection,
@@ -21,7 +25,17 @@ import { ThemeProvider } from '../theme/ThemeContext';
 
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
+const mockDismissTo = jest.fn();
 const mockCanGoBack = jest.fn<boolean, []>();
+// `useRouter` hands back a module-level singleton, so the identity has to be
+// stable here too: the screen lists it as an effect dependency.
+const mockRouter = {
+  back: mockBack,
+  canGoBack: mockCanGoBack,
+  dismissTo: mockDismissTo,
+  replace: mockReplace,
+};
+const mockUseEffect = useEffect;
 
 jest.mock('lucide-react-native', () =>
   new Proxy(
@@ -33,11 +47,11 @@ jest.mock('lucide-react-native', () =>
 );
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({
-    back: mockBack,
-    canGoBack: mockCanGoBack,
-    replace: mockReplace,
-  }),
+  useRouter: () => mockRouter,
+  // Without a navigator there is nothing to focus, and the screen mounts
+  // focused, so a plain effect is the faithful stand-in.
+  useFocusEffect: (callback: () => void | (() => void)) =>
+    mockUseEffect(callback, [callback]),
 }));
 
 jest.mock('expo-web-browser', () => ({
@@ -79,6 +93,8 @@ const wrap = () =>
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // `clearAllMocks` keeps implementations, and one test makes this one throw.
+  mockDismissTo.mockReset();
   mockCanGoBack.mockReturnValue(true);
   jest.mocked(getOauthConfig).mockReturnValue({
     clientId: 'client-1',
@@ -107,9 +123,10 @@ beforeEach(() => {
 });
 
 describe('OAuth sign-in', () => {
-  test('falls back to an explicit route when the history is gone', async () => {
-    // The auth sheet can outlive the screen. Staying put would read as a silent
-    // failure even though the credential was stored.
+  test('leaves for settings without consulting the history', async () => {
+    // The auth sheet can outlive the screen, so "go back one" has nothing
+    // dependable to go back to. Staying put would read as a silent failure
+    // even though the credential was stored.
     mockCanGoBack.mockReturnValue(false);
     wrap();
 
@@ -117,9 +134,10 @@ describe('OAuth sign-in', () => {
 
     await waitFor(() => expect(addOauthConnection).toHaveBeenCalled());
     await waitFor(() =>
-      expect(mockReplace).toHaveBeenCalledWith('/(tabs)/(settings)'),
+      expect(mockDismissTo).toHaveBeenCalledWith('/(tabs)/(settings)'),
     );
     expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(
         screen.getByTestId('oauth-signin').props.accessibilityState.disabled,
@@ -127,12 +145,12 @@ describe('OAuth sign-in', () => {
     );
   });
 
-  test('completes the flow and navigates back', async () => {
+  test('completes the flow and leaves the screen', async () => {
     wrap();
 
     fireEvent.press(screen.getByTestId('oauth-signin'));
 
-    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+    await waitFor(() => expect(mockDismissTo).toHaveBeenCalled());
     expect(addOauthConnection).toHaveBeenCalledWith(
       {
         accessToken: 'access',
@@ -154,7 +172,7 @@ describe('OAuth sign-in', () => {
         screen.getByTestId('oauth-signin').props.accessibilityState.disabled,
       ).toBe(false),
     );
-    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockDismissTo).not.toHaveBeenCalled();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
@@ -173,7 +191,7 @@ describe('OAuth sign-in', () => {
         ),
       ).toBeTruthy(),
     );
-    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockDismissTo).not.toHaveBeenCalled();
   });
 
   test('is disabled with a hint when no client is configured', () => {
@@ -204,13 +222,15 @@ describe('API token fallback', () => {
     ).toBe(false);
   });
 
-  test('connects and navigates back on success', async () => {
+  test('connects and leaves for settings on success', async () => {
     wrap();
 
     fireEvent.changeText(screen.getByTestId('api-token'), 'secret');
     fireEvent.press(screen.getByTestId('connect-submit'));
 
-    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(mockDismissTo).toHaveBeenCalledWith('/(tabs)/(settings)'),
+    );
     expect(addConnection).toHaveBeenCalledWith('secret');
   });
 
@@ -244,7 +264,7 @@ describe('API token fallback', () => {
         screen.getByText('The API token is invalid or expired.'),
       ).toBeTruthy(),
     );
-    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockDismissTo).not.toHaveBeenCalled();
   });
 
   test('clears the error once the token is edited', async () => {
@@ -270,6 +290,35 @@ describe('API token fallback', () => {
         'Could not reach Cloudflare. Check your connection.',
       ),
     ).toBeNull();
+  });
+});
+
+describe('Post-connect callback', () => {
+  test('a throwing callback is not reported as a binding failure', async () => {
+    // The credential is in the keychain by the time the callback runs, so a
+    // failure there is not a binding failure. Reporting it as one would invite
+    // the user to rebind something that is already bound, and letting it
+    // escape would surface as an unhandled rejection: callers start these
+    // actions with `void`.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const onConnected = jest.fn(() => {
+      throw new Error('navigation is not mounted');
+    });
+
+    try {
+      const { result } = renderHook(() => useConnectAccount(onConnected));
+
+      await act(async () => {
+        await result.current.connectWithToken('secret');
+      });
+
+      expect(addConnection).toHaveBeenCalledTimes(1);
+      expect(onConnected).toHaveBeenCalledTimes(1);
+      expect(result.current.error).toBeNull();
+      expect(result.current.busy).toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
