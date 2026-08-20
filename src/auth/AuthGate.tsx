@@ -72,12 +72,19 @@ export function AuthGateProvider({
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
-      isForeground.current = nextState === 'active';
-      if (nextState !== 'active' && !isAutoLockSuspended()) {
-        setStatus((current) =>
-          current === 'unlocked' ? 'locked' : current,
-        );
+      if (nextState === 'active') {
+        isForeground.current = true;
+        return;
       }
+      // A sheet we put up ourselves — the OAuth session or the biometric
+      // prompt — also resigns the active state. The user never left, so this
+      // must not lock, and it must not mark us as backgrounded either: the
+      // completion that follows would then be discarded as a late arrival.
+      if (isAutoLockSuspended()) {
+        return;
+      }
+      isForeground.current = false;
+      setStatus((current) => (current === 'unlocked' ? 'locked' : current));
     });
 
     return () => subscription.remove();

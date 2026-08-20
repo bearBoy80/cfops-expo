@@ -15,6 +15,7 @@ import { LockKeyhole, ScanFace } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/src/auth/AuthGate';
+import { isAutoLockSuspended, suspendAutoLock } from '@/src/auth/autoLock';
 import { getAccount, verifyPassword } from '@/src/auth/localAccount';
 import { AuthTextInput } from '@/src/components/AuthTextInput';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -105,13 +106,21 @@ export default function Unlock() {
           return;
         }
 
-        const result = await LocalAuthentication.authenticateAsync({
-          biometricsSecurityLevel: 'strong',
-          cancelLabel: t('unlock.usePassword'),
-          disableDeviceFallback: true,
-          fallbackLabel: t('unlock.usePassword'),
-          promptMessage: t('unlock.prompt'),
-        });
+        // Presenting the system prompt drops the app out of the foreground,
+        // exactly like the OAuth sheet, so the same suspension applies.
+        const releaseAutoLock = suspendAutoLock();
+        let result: LocalAuthentication.LocalAuthenticationResult;
+        try {
+          result = await LocalAuthentication.authenticateAsync({
+            biometricsSecurityLevel: 'strong',
+            cancelLabel: t('unlock.usePassword'),
+            disableDeviceFallback: true,
+            fallbackLabel: t('unlock.usePassword'),
+            promptMessage: t('unlock.prompt'),
+          });
+        } finally {
+          releaseAutoLock();
+        }
         if (
           result.success &&
           isForeground.current &&
@@ -160,7 +169,13 @@ export default function Unlock() {
   useEffect(() => {
     isMounted.current = true;
     const subscription = AppState.addEventListener('change', (nextState) => {
-      isForeground.current = nextState === 'active';
+      if (nextState === 'active') {
+        isForeground.current = true;
+      } else if (!isAutoLockSuspended()) {
+        // Mirrors AuthGate: the biometric prompt resigns the active state
+        // without the user leaving, and the success arrives right after.
+        isForeground.current = false;
+      }
     });
 
     return () => {

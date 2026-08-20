@@ -163,6 +163,22 @@ test('stays unlocked while an auth sheet suspends the lock', async () => {
   expect(result.current.status).toBe('locked');
 });
 
+test('accepts an unlock that completes across a suspended foreground drop', async () => {
+  await createAccount('JT', 'hunter2secret', true);
+  const { result } = renderHook(() => useAuth(), { wrapper });
+  await waitFor(() => expect(result.current.status).toBe('locked'));
+
+  // The biometric prompt resigns the active state before it reports success,
+  // and the return to `active` lands after the completion.
+  const release = suspendAutoLock();
+  act(() => appStateListener?.('inactive'));
+  act(() => result.current.unlock());
+  release();
+  act(() => appStateListener?.('active'));
+
+  expect(result.current.status).toBe('unlocked');
+});
+
 test('rejects a late unlock completion while the app is backgrounded', async () => {
   await createAccount('JT', 'hunter2secret', false);
   const { result } = renderHook(() => useAuth(), { wrapper });

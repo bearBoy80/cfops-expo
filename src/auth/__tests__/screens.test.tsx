@@ -18,6 +18,7 @@ import {
 import Onboarding from '@/app/onboarding';
 import Unlock from '@/app/unlock';
 import { AuthGateProvider, useAuth } from '../AuthGate';
+import { resetAutoLock } from '../autoLock';
 import {
   advanceOnboarding,
   createAccount,
@@ -143,6 +144,9 @@ function renderWithProviders(ui: React.ReactElement) {
 beforeEach(() => {
   mockStore.clear();
   appStateListeners.clear();
+  // A prompt left pending by an earlier test must not keep auto-lock
+  // suspended for the next one.
+  resetAutoLock();
   Object.defineProperty(AppState, 'currentState', {
     configurable: true,
     value: 'active',
@@ -987,6 +991,46 @@ test('clears an old password error when biometric authentication starts', async 
   await act(async () => {
     resolvePrompt?.({ success: false, error: 'user_cancel' });
   });
+});
+
+test('unlocks when the biometric prompt resigns the active state', async () => {
+  let resolvePrompt: ((value: { success: true }) => void) | undefined;
+  jest
+    .mocked(LocalAuthentication.hasHardwareAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.isEnrolledAsync)
+    .mockResolvedValue(true);
+  jest
+    .mocked(LocalAuthentication.authenticateAsync)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrompt = resolve;
+        }),
+    );
+  await createAccount('JT', 'hunter2secret', true);
+  renderWithProviders(<Unlock />);
+
+  fireEvent.press(
+    await screen.findByRole('button', {
+      name: 'Use Face ID / fingerprint',
+    }),
+  );
+  await waitFor(() =>
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1),
+  );
+
+  // iOS drops the app out of `active` for as long as the Face ID sheet is up.
+  act(() => {
+    appStateListeners.forEach((listener) => listener('inactive'));
+  });
+
+  await act(async () => {
+    resolvePrompt?.({ success: true });
+  });
+
+  expect(screen.getByTestId('auth-status').props.children).toBe('unlocked');
 });
 
 test('ignores a pending biometric success after the unlock screen unmounts', async () => {
