@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react';
 import { AppState } from 'react-native';
+import { isAutoLockSuspended } from './autoLock';
 import { deleteAccount, getAccount } from './localAccount';
 
 export type AuthStatus =
@@ -72,7 +73,7 @@ export function AuthGateProvider({
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       isForeground.current = nextState === 'active';
-      if (nextState !== 'active') {
+      if (nextState !== 'active' && !isAutoLockSuspended()) {
         setStatus((current) =>
           current === 'unlocked' ? 'locked' : current,
         );

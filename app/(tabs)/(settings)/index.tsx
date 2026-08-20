@@ -1,14 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Fingerprint, Globe, LogOut, Moon, Plus } from 'lucide-react-native';
+import {
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Fingerprint,
+  Globe,
+  Lock,
+  LogOut,
+  Moon,
+  Plus,
+  ScrollText,
+} from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { useTranslation } from 'react-i18next';
@@ -19,23 +30,32 @@ import {
   setBiometricsEnabled,
 } from '@/src/auth/localAccount';
 import {
+  discoverAccounts,
   listConnections,
   removeConnection,
+  setConnectionAccounts,
   type CloudflareConnection,
 } from '@/src/cloudflare/connections';
-import { invalidateZonesSnapshot } from '@/src/cloudflare/resources';
+import { invalidateAllSnapshots } from '@/src/cloudflare/cache';
+import { getBearerForConnection } from '@/src/cloudflare/resources';
 import {
   AccountChip,
   Card,
   InitialsAvatar,
   ListRow,
   SectionLabel,
+  SegmentedControl,
   ToggleRow,
 } from '@/src/components/ui';
+import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { accent, label, tint } from '@/src/theme/tokens';
+import { haptics } from '@/src/utils/haptics';
 
 const chipColors = [accent.orange, accent.blue, accent.green, accent.red];
+
+const PRIVACY_URL = 'https://www.cloudflare.com/privacypolicy/';
+const TERMS_URL = 'https://www.cloudflare.com/website-terms/';
 
 interface Profile {
   name: string;
@@ -43,13 +63,52 @@ interface Profile {
   email: string;
 }
 
+/**
+ * Re-discovers accounts for connections stored without any (e.g. tokens bound
+ * before zone-based discovery), persists them, and pushes the healed list.
+ */
+async function healEmptyConnections(
+  items: CloudflareConnection[],
+  isActive: () => boolean,
+  apply: (next: CloudflareConnection[]) => void,
+): Promise<void> {
+  const empties = items.filter((item) => item.accounts.length === 0);
+  if (empties.length === 0) {
+    return;
+  }
+
+  let changed = false;
+  await Promise.all(
+    empties.map(async (item) => {
+      try {
+        const bearer = await getBearerForConnection(item.id);
+        const accounts = await discoverAccounts(bearer);
+        if (accounts.length > 0) {
+          await setConnectionAccounts(item.id, accounts);
+          changed = true;
+        }
+      } catch {
+        // Leave the connection untouched if discovery fails.
+      }
+    }),
+  );
+
+  if (changed && isActive()) {
+    invalidateAllSnapshots();
+    apply(await listConnections());
+  }
+}
+
 export default function SettingsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { lock, reportAccountError } = useAuth();
-  const { mode, colors, setMode } = useTheme();
+  const { mode, colors, preference, setPreference } = useTheme();
+  const bottomInset = useTabBarInset();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [connections, setConnections] = useState<CloudflareConnection[]>([]);
+  // Absent means expanded: nothing is hidden until the user chooses to fold it.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [biometrics, setBiometrics] = useState(false);
   const [biometricsError, setBiometricsError] = useState<string | null>(null);
   const [language, setLanguage] = useState<AppLanguage>('system');
@@ -63,6 +122,7 @@ export default function SettingsScreen() {
           if (active) {
             setConnections(items);
           }
+          return healEmptyConnections(items, () => active, setConnections);
         })
         .catch(() => {
           // A failed read leaves the last known list in place.
@@ -80,10 +140,25 @@ export default function SettingsScreen() {
     }, []),
   );
 
+  const toggleCredential = (connectionId: string) => {
+    haptics.selection();
+    setCollapsed((current) => ({
+      ...current,
+      [connectionId]: !current[connectionId],
+    }));
+  };
+
   const disconnect = (connection: CloudflareConnection) => {
     Alert.alert(
       t('settings.disconnectTitle'),
-      t('settings.disconnectMessage', { label: connection.label }),
+      // One credential can cover several accounts, and removing it cuts off all
+      // of them. Naming only the credential would understate that.
+      connection.accounts.length > 1
+        ? t('settings.disconnectMessageMulti', {
+            count: connection.accounts.length,
+            label: connection.label,
+          })
+        : t('settings.disconnectMessage', { label: connection.label }),
       [
         { style: 'cancel', text: t('common.cancel') },
         {
@@ -91,7 +166,7 @@ export default function SettingsScreen() {
           text: t('settings.disconnect'),
           onPress: () => {
             void removeConnection(connection.id).then(() => {
-              invalidateZonesSnapshot();
+              invalidateAllSnapshots();
               return listConnections().then(setConnections);
             });
           },
@@ -147,7 +222,7 @@ export default function SettingsScreen() {
       style={[styles.safeArea, { backgroundColor: colors.bg }]}
     >
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomInset }]}
         showsVerticalScrollIndicator={false}
       >
         <Text style={[styles.title, { color: colors.text }]}>
@@ -171,7 +246,10 @@ export default function SettingsScreen() {
 
         <SectionLabel>
           {t('settings.connectedAccounts')} ·{' '}
-          {connections.reduce((sum, item) => sum + item.accounts.length, 0)}
+          {connections.reduce(
+            (sum, item) => sum + Math.max(item.accounts.length, 1),
+            0,
+          )}
         </SectionLabel>
         <Card>
           {connections.length === 0 ? (
@@ -196,61 +274,85 @@ export default function SettingsScreen() {
               }
             />
           ) : (
-            connections.flatMap((connection) =>
-              connection.accounts.length === 0
-                ? [
-                    <ListRow
-                      key={connection.id}
-                      chevron={false}
-                      onPress={() => disconnect(connection)}
-                      left={
-                        <View style={styles.accountRow}>
-                          <AccountChip
-                            color={accent.gray}
-                            name={connection.label}
-                            size={32}
-                          />
-                          <View style={styles.accountRowCopy}>
-                            <Text
-                              numberOfLines={1}
-                              style={[
-                                styles.accountRowName,
-                                { color: colors.text },
-                              ]}
-                            >
-                              {connection.label}
-                            </Text>
-                            <Text
-                              style={[
-                                styles.accountRowSub,
-                                { color: label(mode, 0.4) },
-                              ]}
-                            >
-                              {t('settings.tokenNoAccounts')}
-                            </Text>
-                          </View>
-                        </View>
-                      }
-                    />,
-                  ]
-                : connection.accounts.map((cfAccount, index) => (
-                    <ListRow
-                      key={`${connection.id}-${cfAccount.id}`}
-                      chevron={false}
-                      onPress={() => disconnect(connection)}
-                      left={
-                        <View style={styles.accountRow}>
-                          <AccountChip
-                            color={chipColors[index % chipColors.length]}
-                            name={cfAccount.name}
-                            size={32}
-                          />
-                          <View style={styles.accountRowCopy}>
-                            <View style={styles.accountRowTitle}>
+            /*
+             * Grouped by credential, not flattened by account: disconnecting
+             * removes the whole credential, so the pressable row has to be the
+             * credential itself. Accounts are read-only children, which also
+             * makes it obvious which ones a single token covers.
+             */
+            connections.flatMap((connection) => {
+              const isOpen = !collapsed[connection.id];
+              const Chevron = isOpen ? ChevronDown : ChevronRight;
+
+              return [
+                <ListRow
+                  key={`${connection.id}-credential`}
+                  chevron={false}
+                  expanded={isOpen}
+                  onPress={() => toggleCredential(connection.id)}
+                  right={
+                    <Chevron
+                      accessibilityElementsHidden
+                      color={label(mode, 0.3)}
+                      size={18}
+                    />
+                  }
+                  testID={`credential-${connection.id}`}
+                  left={
+                    <View style={styles.accountRow}>
+                      <AccountChip
+                        color={accent.gray}
+                        name={connection.label}
+                        size={32}
+                      />
+                      <View style={styles.accountRowCopy}>
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.accountRowName,
+                            { color: colors.text },
+                          ]}
+                        >
+                          {connection.label}
+                        </Text>
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.accountRowSub,
+                            { color: label(mode, 0.4) },
+                          ]}
+                        >
+                          {connection.accounts.length === 0
+                            ? t('settings.tokenNoAccounts')
+                            : `${
+                                connection.authType === 'oauth'
+                                  ? t('settings.authOauth')
+                                  : t('settings.authToken')
+                              } · ${t('settings.credentialAccounts', {
+                                count: connection.accounts.length,
+                              })}`}
+                        </Text>
+                      </View>
+                    </View>
+                  }
+                />,
+                ...(isOpen
+                  ? [
+                      ...connection.accounts.map((cfAccount, index) => (
+                        <ListRow
+                          key={`${connection.id}-${cfAccount.id}`}
+                          chevron={false}
+                          left={
+                            <View style={styles.credentialAccountRow}>
+                              <AccountChip
+                                color={chipColors[index % chipColors.length]}
+                                name={cfAccount.name}
+                                size={24}
+                              />
                               <Text
                                 numberOfLines={1}
                                 style={[
-                                  styles.accountRowName,
+                                  styles.credentialAccountName,
                                   { color: colors.text },
                                 ]}
                               >
@@ -258,24 +360,26 @@ export default function SettingsScreen() {
                               </Text>
                               <View style={styles.healthDot} />
                             </View>
-                            <Text
-                              numberOfLines={1}
-                              style={[
-                                styles.accountRowSub,
-                                { color: label(mode, 0.4) },
-                              ]}
-                            >
-                              {connection.authType === 'oauth'
-                                ? t('settings.authOauth')
-                                : t('settings.authToken')}{' '}
-                              · {connection.label}
-                            </Text>
-                          </View>
-                        </View>
-                      }
-                    />
-                  )),
-            )
+                          }
+                        />
+                      )),
+                      // Scoped inside the group so it is unambiguous which
+                      // credential it removes, and needs no hidden gesture.
+                      <ListRow
+                        key={`${connection.id}-disconnect`}
+                        chevron={false}
+                        onPress={() => disconnect(connection)}
+                        testID={`disconnect-${connection.id}`}
+                        left={
+                          <Text style={styles.disconnectLabel}>
+                            {t('settings.disconnectCredential')}
+                          </Text>
+                        }
+                      />,
+                    ]
+                  : []),
+              ];
+            })
           )}
           <ListRow
             chevron={false}
@@ -305,13 +409,40 @@ export default function SettingsScreen() {
 
         <SectionLabel>{t('settings.preferences')}</SectionLabel>
         <Card>
-          <ToggleRow
-            Icon={Moon}
-            color={accent.blue}
-            label={t('settings.darkAppearance')}
-            onValueChange={(value) => setMode(value ? 'dark' : 'light')}
-            testID="dark-appearance"
-            value={mode === 'dark'}
+          <View style={styles.appearanceRow}>
+            <View
+              style={[
+                styles.languageIcon,
+                { backgroundColor: tint(accent.blue, '26') },
+              ]}
+            >
+              <Moon
+                accessibilityElementsHidden
+                color={accent.blue}
+                size={16}
+              />
+            </View>
+            <Text style={[styles.languageLabel, { color: colors.text }]}>
+              {t('settings.appearance')}
+            </Text>
+          </View>
+          <View style={styles.appearanceSegments}>
+            <SegmentedControl
+              segments={[
+                { id: 'system', label: t('settings.themeSystem') },
+                { id: 'light', label: t('settings.themeLight') },
+                { id: 'dark', label: t('settings.themeDark') },
+              ]}
+              selected={preference}
+              onChange={setPreference}
+              testIDPrefix="appearance"
+            />
+          </View>
+          <View
+            style={[
+              styles.divider,
+              { backgroundColor: label(mode, 0.08) },
+            ]}
           />
           <ListRow
             last
@@ -363,15 +494,117 @@ export default function SettingsScreen() {
           </Text>
         ) : null}
 
-        <TouchableOpacity
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          onPress={lock}
-          style={[styles.lockButton, { backgroundColor: colors.surface }]}
-        >
-          <LogOut accessibilityElementsHidden color={accent.red} size={16} />
-          <Text style={styles.lockLabel}>{t('settings.lockConsole')}</Text>
-        </TouchableOpacity>
+        <SectionLabel>{t('settings.about')}</SectionLabel>
+        <Card>
+          <ListRow
+            chevron={false}
+            left={
+              <View style={styles.accountRow}>
+                <View
+                  style={[
+                    styles.languageIcon,
+                    { backgroundColor: tint(accent.green, '26') },
+                  ]}
+                >
+                  <Lock
+                    accessibilityElementsHidden
+                    color={accent.green}
+                    size={16}
+                  />
+                </View>
+                <View style={styles.accountRowCopy}>
+                  <Text
+                    style={[styles.accountRowName, { color: colors.text }]}
+                  >
+                    {t('settings.dataPrivacy')}
+                  </Text>
+                  <Text
+                    style={[styles.accountRowSub, { color: label(mode, 0.4) }]}
+                  >
+                    {t('settings.dataPrivacySub')}
+                  </Text>
+                </View>
+              </View>
+            }
+          />
+          <ListRow
+            onPress={() => void Linking.openURL(PRIVACY_URL)}
+            testID="privacy-policy-row"
+            left={
+              <View style={styles.languageRow}>
+                <View
+                  style={[
+                    styles.languageIcon,
+                    { backgroundColor: tint(accent.blue, '26') },
+                  ]}
+                >
+                  <FileText
+                    accessibilityElementsHidden
+                    color={accent.blue}
+                    size={16}
+                  />
+                </View>
+                <Text style={[styles.languageLabel, { color: colors.text }]}>
+                  {t('settings.privacyPolicy')}
+                </Text>
+              </View>
+            }
+          />
+          <ListRow
+            last
+            onPress={() => void Linking.openURL(TERMS_URL)}
+            testID="terms-row"
+            left={
+              <View style={styles.languageRow}>
+                <View
+                  style={[
+                    styles.languageIcon,
+                    { backgroundColor: tint(accent.purple, '26') },
+                  ]}
+                >
+                  <ScrollText
+                    accessibilityElementsHidden
+                    color={accent.purple}
+                    size={16}
+                  />
+                </View>
+                <Text style={[styles.languageLabel, { color: colors.text }]}>
+                  {t('settings.termsOfService')}
+                </Text>
+              </View>
+            }
+          />
+        </Card>
+
+        <View style={styles.lockWrap}>
+          <Card>
+            <ListRow
+              chevron={false}
+              last
+              onPress={lock}
+              testID="lock-console"
+              left={
+                <View style={styles.languageRow}>
+                  <View
+                    style={[
+                      styles.languageIcon,
+                      { backgroundColor: tint(accent.red, '26') },
+                    ]}
+                  >
+                    <LogOut
+                      accessibilityElementsHidden
+                      color={accent.red}
+                      size={16}
+                    />
+                  </View>
+                  <Text style={[styles.languageLabel, { color: accent.red }]}>
+                    {t('settings.lockConsole')}
+                  </Text>
+                </View>
+              }
+            />
+          </Card>
+        </View>
 
         <Text style={[styles.footer, { color: label(mode, 0.3) }]}>
           {t('settings.footer', { version })}
@@ -382,6 +615,21 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  appearanceRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
+  },
+  appearanceSegments: {
+    paddingBottom: 12,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 16,
+  },
   accountRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -404,6 +652,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
+  },
+  credentialAccountName: {
+    flexShrink: 1,
+    fontSize: 14,
+  },
+  credentialAccountRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    // Indented so the accounts read as belonging to the credential above.
+    paddingLeft: 22,
+  },
+  disconnectLabel: {
+    color: accent.red,
+    fontSize: 14,
+    paddingLeft: 22,
   },
   healthDot: {
     backgroundColor: accent.green,
@@ -449,9 +713,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
-  content: {
-    paddingBottom: 24,
-  },
+  content: {},
   emptyAccounts: {
     paddingVertical: 4,
   },
@@ -493,20 +755,8 @@ const styles = StyleSheet.create({
   languageValue: {
     fontSize: 14,
   },
-  lockButton: {
-    alignItems: 'center',
-    borderRadius: 16,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    marginHorizontal: 16,
-    marginTop: 24,
-    minHeight: 48,
-  },
-  lockLabel: {
-    color: accent.red,
-    fontSize: 15,
-    fontWeight: '500',
+  lockWrap: {
+    marginTop: 16,
   },
   safeArea: {
     flex: 1,

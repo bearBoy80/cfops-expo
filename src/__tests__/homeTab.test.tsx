@@ -10,6 +10,7 @@ import { fetchAnalyticsSnapshot } from '../cloudflare/analytics';
 import { CloudflareApiError } from '../cloudflare/api';
 import { fetchZonesSnapshot } from '../cloudflare/resources';
 import type { ZonesSnapshot } from '../cloudflare/resources';
+import { resetAccountScope } from '../state/accountScope';
 import { ThemeProvider } from '../theme/ThemeContext';
 
 const mockPush = jest.fn();
@@ -35,6 +36,17 @@ jest.mock('expo-router', () => {
 
 jest.mock('../cloudflare/resources', () => ({
   fetchZonesSnapshot: jest.fn(),
+}));
+
+// Home warms the compute snapshot cache after its own load.
+jest.mock('../cloudflare/accountResources', () => ({
+  fetchComputeSnapshot: jest.fn().mockResolvedValue({
+    connectionCount: 1,
+    accounts: [],
+    workers: [],
+    pages: [],
+    issues: [],
+  }),
 }));
 
 jest.mock('../cloudflare/analytics', () => {
@@ -122,6 +134,7 @@ const wrap = () =>
 
 beforeEach(() => {
   jest.clearAllMocks();
+  resetAccountScope();
   jest.mocked(fetchZonesSnapshot).mockResolvedValue(snapshot);
   jest.mocked(fetchAnalyticsSnapshot).mockResolvedValue(noAnalytics);
 });

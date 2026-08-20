@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -14,11 +14,11 @@ import {
   type ZonesSnapshot,
 } from '@/src/cloudflare/resources';
 import { ZoneSubpage } from '@/src/components/ZoneSubpage';
-import { Card, SectionLabel } from '@/src/components/ui';
+import { Card, SectionLabel, InlineEmpty } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { accent, hairline, label, tint } from '@/src/theme/tokens';
-import { compactNumber, formatBytes } from '@/src/utils/format';
+import { compactNumber, formatBytes, preciseTens } from '@/src/utils/format';
 
 function cacheRatio(zone: { bytes: number; cachedBytes: number }): number | null {
   if (zone.bytes <= 0) {
@@ -72,29 +72,21 @@ export default function HomePerformance() {
   const [zones, setZones] = useState<ZonesSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    void fetchZonesSnapshot()
-      .then((nextZones) => {
-        if (active) {
-          setZones(nextZones);
-        }
-        return fetchAnalyticsSnapshot(nextZones);
-      })
-      .then((next) => {
-        if (active) {
-          setSnapshot(next);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      });
-    return () => {
-      active = false;
-    };
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const nextZones = await fetchZonesSnapshot();
+      setZones(nextZones);
+      const next = await fetchAnalyticsSnapshot(nextZones);
+      setSnapshot(next);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    }
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const accountId = params.accountId || undefined;
   const aggregate = useMemo(
@@ -130,6 +122,7 @@ export default function HomePerformance() {
         zoneId: match.id,
         connectionId: match.connectionId,
         name: match.name,
+        ...(zone.visits !== null ? { visits: String(zone.visits) } : {}),
       },
     } as unknown as Href);
   };
@@ -139,6 +132,7 @@ export default function HomePerformance() {
       backLabel={t('tabs.home')}
       error={error}
       loading={!snapshot && !error}
+      onRefresh={load}
       subtitle={
         params.accountName
           ? `${params.accountName} · ${t('home.metricSub24h')}`
@@ -150,7 +144,7 @@ export default function HomePerformance() {
         <View style={[styles.summary, { backgroundColor: colors.surface }]}>
           <Text style={[styles.heroValue, { color: colors.text }]}>
             {aggregate.visits !== null
-              ? compactNumber(aggregate.visits)
+              ? preciseTens(aggregate.visits)
               : '—'}
           </Text>
           <Text style={[styles.heroLabel, { color: label(mode, 0.45) }]}>
@@ -160,7 +154,7 @@ export default function HomePerformance() {
             <View style={styles.summaryStat}>
               <Text style={[styles.summaryValue, { color: colors.text }]}>
                 {aggregate.pageViews !== null
-                  ? compactNumber(aggregate.pageViews)
+                  ? preciseTens(aggregate.pageViews)
                   : '—'}
               </Text>
               <Text style={[styles.summaryLabel, { color: label(mode, 0.45) }]}>
@@ -196,9 +190,9 @@ export default function HomePerformance() {
       <SectionLabel>{t('home.performanceZones')}</SectionLabel>
 
       {rows.length === 0 && snapshot ? (
-        <Text style={[styles.empty, { color: label(mode, 0.45) }]}>
+        <InlineEmpty>
           {t('home.performanceEmpty')}
-        </Text>
+        </InlineEmpty>
       ) : (
         <Card>
           {rows.map((zone, index) => {
@@ -234,7 +228,7 @@ export default function HomePerformance() {
                     {zone.visits !== null ? (
                       <Text style={[styles.visitors, { color: accent.green }]}>
                         {t('home.visitorsCount', {
-                          count: compactNumber(zone.visits),
+                          count: preciseTens(zone.visits),
                         })}
                       </Text>
                     ) : null}
@@ -320,11 +314,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     overflow: 'hidden',
     width: '100%',
-  },
-  empty: {
-    fontSize: 14,
-    lineHeight: 20,
-    paddingHorizontal: 16,
   },
   icon: {
     alignItems: 'center',

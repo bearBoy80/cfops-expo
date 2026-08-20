@@ -17,6 +17,7 @@ import {
   fetchPagesFunctionMetrics,
   type PagesFunctionMetrics,
 } from '@/src/cloudflare/analytics';
+import { invalidateComputeSnapshot } from '@/src/cloudflare/accountResources';
 import {
   addPagesDomain,
   deletePagesDomain,
@@ -129,25 +130,20 @@ export default function PagesProjectDetail() {
     [params.accountId, params.project, params.productionScriptName],
   );
 
+  const refresh = useCallback(async () => {
+    setError(null);
+    try {
+      const resolved = await getBearerForConnection(params.connectionId);
+      setBearer(resolved);
+      await load(resolved);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    }
+  }, [load, params.connectionId]);
+
   useEffect(() => {
-    let active = true;
-    void getBearerForConnection(params.connectionId)
-      .then(async (resolved) => {
-        if (!active) {
-          return;
-        }
-        setBearer(resolved);
-        await load(resolved);
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [params.connectionId, load]);
+    void refresh();
+  }, [refresh]);
 
   /** Newest production deployment: rolling back to it would be a no-op. */
   const currentProductionId = deployments?.find(
@@ -175,6 +171,8 @@ export default function PagesProjectDetail() {
       setBusy(true);
       void action
         .then(async () => {
+          // The list row shows the latest deployment status and commit.
+          invalidateComputeSnapshot();
           showToast(doneMessage);
           await load(bearer);
         })
@@ -261,6 +259,8 @@ export default function PagesProjectDetail() {
     setBusy(true);
     void addPagesDomain(bearer, params.accountId, params.project, name)
       .then(async () => {
+        // The list row shows the primary domain, i.e. the first of domains.
+        invalidateComputeSnapshot();
         setDomainSheet(null);
         showToast(t('compute.domainAdded'));
         await load(bearer);
@@ -293,6 +293,7 @@ export default function PagesProjectDetail() {
               domain.name,
             )
               .then(async () => {
+                invalidateComputeSnapshot();
                 showToast(t('compute.domainRemoved'));
                 await load(bearer);
               })
@@ -326,6 +327,7 @@ export default function PagesProjectDetail() {
       backLabel={t('compute.title')}
       error={error}
       loading={!deployments && !error}
+      onRefresh={refresh}
       subtitle={params.accountName}
       title={params.project}
     >

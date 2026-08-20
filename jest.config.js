@@ -1,6 +1,11 @@
 module.exports = {
   preset: 'jest-expo',
   roots: ['<rootDir>/src', '<rootDir>/app'],
+  resolver: '<rootDir>/jest.resolver.js',
+  setupFiles: [
+    ...(require('jest-expo/jest-preset').setupFiles ?? []),
+    'react-native-gesture-handler/jestSetup',
+  ],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',

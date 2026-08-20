@@ -15,16 +15,30 @@ jest.mock('expo-auth-session', () => ({
   makeRedirectUri: jest.fn(() => 'cfops://oauth/callback'),
 }));
 
+jest.mock('expo-web-browser', () => ({
+  openAuthSessionAsync: jest.fn(),
+}));
+
 import type { AuthRequest, AuthSessionResult } from 'expo-auth-session';
 import { exchangeCodeAsync } from 'expo-auth-session';
+import { openAuthSessionAsync } from 'expo-web-browser';
 import {
+  appCallbackUrl,
+  authorize,
   exchangeAuthorizationCode,
   fetchOauthIdentity,
   getOauthConfig,
-  redirectUri,
 } from '../oauth';
 
 const mockFetch = jest.fn();
+const RELAY = 'https://cf.example.com/oauth/callback';
+
+/** A fully configured client: both the id and the relay URL are required. */
+const configure = (overrides: Record<string, unknown> = {}) => {
+  mockExpoConfig.extra = {
+    cloudflareOauth: { clientId: 'abc', redirectUri: RELAY, ...overrides },
+  };
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -34,24 +48,119 @@ beforeEach(() => {
 
 describe('getOauthConfig', () => {
   test('returns null when no client id is configured', () => {
-    mockExpoConfig.extra = { cloudflareOauth: { clientId: '' } };
+    mockExpoConfig.extra = {
+      cloudflareOauth: { clientId: '', redirectUri: RELAY },
+    };
     expect(getOauthConfig()).toBeNull();
   });
 
-  test('returns the client id with default scopes', () => {
-    mockExpoConfig.extra = { cloudflareOauth: { clientId: ' abc ' } };
-    expect(getOauthConfig()).toEqual({
-      clientId: 'abc',
-      scopes: [
-        'account.read',
-        'workers.read',
-        'workers_kv.read',
-        'workers_r2.read',
+  test('returns null until the callback relay is configured', () => {
+    // Cloudflare rejects private-use schemes, so there is no usable default.
+    mockExpoConfig.extra = { cloudflareOauth: { clientId: 'abc' } };
+    expect(getOauthConfig()).toBeNull();
+
+    mockExpoConfig.extra = {
+      cloudflareOauth: { clientId: 'abc', redirectUri: '  ' },
+    };
+    expect(getOauthConfig()).toBeNull();
+  });
+
+  test('falls back to the scopes the app screens need', () => {
+    configure({ clientId: ' abc ' });
+    const config = getOauthConfig();
+
+    expect(config?.clientId).toBe('abc');
+    expect(config?.redirectUri).toBe(RELAY);
+    // Scope ids differ from the API-token permission names.
+    expect(config?.scopes).toEqual(
+      expect.arrayContaining([
+        'account-settings.read',
+        'zone.read',
+        'dns.read',
+        'workers-scripts.read',
+        'workers-kv-storage.read',
+        'workers-r2.read',
         'd1.read',
-        'pages.read',
-        'offline_access',
-      ],
+        'page.read',
+        'analytics.read',
+      ]),
+    );
+    expect(config?.scopes).not.toContain('account.read');
+    expect(config?.scopes).not.toContain('workers.read');
+  });
+
+  test('always requests offline_access so a refresh token is issued', () => {
+    configure();
+    expect(getOauthConfig()?.scopes).toContain('offline_access');
+
+    configure({ scopes: ['zone.read'] });
+    expect(getOauthConfig()?.scopes).toEqual(['zone.read', 'offline_access']);
+
+    // Never duplicated when the override already asks for it.
+    configure({ scopes: ['zone.read', 'offline_access'] });
+    expect(getOauthConfig()?.scopes).toEqual(['zone.read', 'offline_access']);
+  });
+});
+
+describe('appCallbackUrl', () => {
+  test('is a fixed url the relay can be pointed at', () => {
+    // Never derived from makeRedirectUri: that splices the Metro host into a
+    // development build and switches to exp:// under Expo Go, so the scheme
+    // ASWebAuthenticationSession listens on would stop matching the relay.
+    expect(appCallbackUrl).toBe('cfops://oauth/callback');
+    expect(appCallbackUrl).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
+    expect(appCallbackUrl.startsWith('cfops://')).toBe(true);
+  });
+});
+
+describe('authorize', () => {
+  const authRequest = {
+    makeAuthUrlAsync: jest.fn(),
+    parseReturnUrl: jest.fn(),
+  };
+
+  beforeEach(() => {
+    authRequest.makeAuthUrlAsync.mockResolvedValue(
+      `https://dash.cloudflare.com/oauth2/auth?redirect_uri=${encodeURIComponent(RELAY)}`,
+    );
+    authRequest.parseReturnUrl.mockReturnValue({
+      type: 'success',
+      params: { code: 'the-code' },
     });
+  });
+
+  test('sends the relay url but listens on the app scheme', async () => {
+    jest.mocked(openAuthSessionAsync).mockResolvedValue({
+      type: 'success',
+      url: 'cfops://oauth/callback?code=the-code&state=s',
+    });
+
+    const result = await authorize(authRequest as unknown as AuthRequest);
+
+    const [startUrl, returnUrl] = jest.mocked(openAuthSessionAsync).mock
+      .calls[0]!;
+    expect(startUrl).toContain(encodeURIComponent(RELAY));
+    expect(returnUrl).toBe(appCallbackUrl);
+    expect(returnUrl).toBe('cfops://oauth/callback');
+
+    // The state check still runs, on the url the relay bounced back.
+    expect(authRequest.parseReturnUrl).toHaveBeenCalledWith(
+      'cfops://oauth/callback?code=the-code&state=s',
+    );
+    expect(result).toEqual({ type: 'success', params: { code: 'the-code' } });
+  });
+
+  test('passes a dismissed browser session through untouched', async () => {
+    jest
+      .mocked(openAuthSessionAsync)
+      .mockResolvedValue({ type: 'dismiss' } as Awaited<
+        ReturnType<typeof openAuthSessionAsync>
+      >);
+
+    await expect(
+      authorize(authRequest as unknown as AuthRequest),
+    ).resolves.toEqual({ type: 'dismiss' });
+    expect(authRequest.parseReturnUrl).not.toHaveBeenCalled();
   });
 });
 
@@ -67,7 +176,7 @@ describe('exchangeAuthorizationCode', () => {
   });
 
   test('exchanges the code with the PKCE verifier', async () => {
-    mockExpoConfig.extra = { cloudflareOauth: { clientId: 'abc' } };
+    configure();
     jest.mocked(exchangeCodeAsync).mockResolvedValue({
       accessToken: 'access',
       refreshToken: 'refresh',
@@ -89,7 +198,8 @@ describe('exchangeAuthorizationCode', () => {
       expect.objectContaining({
         clientId: 'abc',
         code: 'the-code',
-        redirectUri,
+        // The relay url, not the app scheme: it must match the auth request.
+        redirectUri: RELAY,
         extraParams: { code_verifier: 'verifier' },
       }),
       expect.objectContaining({

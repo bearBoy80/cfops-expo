@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,7 @@ import {
   Pill,
   SectionLabel,
   type Status,
+  InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -73,30 +74,24 @@ export default function ZoneSsl() {
   const [sslMode, setSslMode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    void getBearerForConnection(params.connectionId)
-      .then((bearer) =>
-        Promise.all([
-          listCertificatePacks(bearer, params.zoneId),
-          getZoneSslMode(bearer, params.zoneId).catch(() => null),
-        ]),
-      )
-      .then(([packsResult, sslResult]) => {
-        if (active) {
-          setPacks(packsResult);
-          setSslMode(sslResult);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      });
-    return () => {
-      active = false;
-    };
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const bearer = await getBearerForConnection(params.connectionId);
+      const [packsResult, sslResult] = await Promise.all([
+        listCertificatePacks(bearer, params.zoneId),
+        getZoneSslMode(bearer, params.zoneId).catch(() => null),
+      ]);
+      setPacks(packsResult);
+      setSslMode(sslResult);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    }
   }, [params.zoneId, params.connectionId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const states = (packs ?? []).map(certState);
   const counts = {
@@ -110,6 +105,7 @@ export default function ZoneSsl() {
       backLabel={params.name ?? t('zone.fallbackTitle')}
       error={error}
       loading={!packs}
+      onRefresh={load}
       subtitle={params.name}
       title={t('zone.svcSsl')}
     >
@@ -201,9 +197,9 @@ export default function ZoneSsl() {
               })}
             </Card>
           ) : (
-            <Text style={[styles.empty, { color: label(mode, 0.4) }]}>
+            <InlineEmpty>
               {t('ssl.empty')}
-            </Text>
+            </InlineEmpty>
           )}
         </>
       ) : null}
@@ -219,11 +215,6 @@ const styles = StyleSheet.create({
   days: {
     fontSize: 13,
     fontWeight: '600',
-  },
-  empty: {
-    fontSize: 15,
-    marginTop: 12,
-    textAlign: 'center',
   },
   host: {
     flexShrink: 1,

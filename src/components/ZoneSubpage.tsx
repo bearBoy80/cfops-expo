@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,9 +9,20 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../theme/ThemeContext';
-import { accent, label } from '../theme/tokens';
+import {
+  accent,
+  font,
+  hairline,
+  label,
+  maxScale,
+  spacing,
+} from '../theme/tokens';
+import { Enter, ErrorState, ScreenSkeleton } from './ui';
+import { haptics } from '../utils/haptics';
+import { useTabBarInset, useTabBarOverlayOffset } from './useTabBarInset';
 
 interface Props {
   title: string;
@@ -22,6 +33,14 @@ interface Props {
   error?: string | null;
   /** Optional action rendered on the title row, e.g. an add button. */
   headerRight?: ReactNode;
+  /** Enables pull-to-refresh when provided. */
+  onRefresh?: () => Promise<unknown> | void;
+  /**
+   * Toolbar pinned above the tab bar, for actions on a selection. Kept out of
+   * the scroll view so it stays reachable in a long list instead of being
+   * buried at the bottom of the content.
+   */
+  footer?: ReactNode;
   children?: ReactNode;
 }
 
@@ -33,57 +52,128 @@ export function ZoneSubpage({
   loading = false,
   error = null,
   headerRight,
+  onRefresh,
+  footer,
   children,
 }: Props) {
   const router = useRouter();
+  const { t } = useTranslation();
   const { mode, colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const bottomInset = useTabBarInset(32);
+  const overlayOffset = useTabBarOverlayOffset();
+  // Measured rather than assumed: the toolbar's height depends on its content,
+  // and the last list row must not end up hidden behind it.
+  const [footerHeight, setFooterHeight] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refresh = useCallback(() => {
+    if (!onRefresh) {
+      return;
+    }
+    haptics.tap();
+    setRefreshing(true);
+    void Promise.resolve(onRefresh()).finally(() => setRefreshing(false));
+  }, [onRefresh]);
 
   return (
-    <SafeAreaView
-      edges={['top']}
-      style={[styles.safeArea, { backgroundColor: colors.bg }]}
+    <View
+      style={[
+        styles.safeArea,
+        { backgroundColor: colors.bg, paddingTop: insets.top },
+      ]}
     >
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: bottomInset + footerHeight },
+        ]}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              onRefresh={refresh}
+              refreshing={refreshing}
+              tintColor={accent.orange}
+            />
+          ) : undefined
+        }
         showsVerticalScrollIndicator={false}
       >
         <Pressable
+          accessibilityLabel={t('common.back')}
           accessibilityRole="button"
           hitSlop={8}
           onPress={() => router.back()}
-          style={styles.backButton}
+          style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
         >
-          <ChevronLeft color={accent.orange} size={22} />
-          <Text numberOfLines={1} style={styles.backLabel}>
-            {backLabel}
-          </Text>
+          <View style={styles.backButton}>
+            <ChevronLeft color={accent.orange} size={22} />
+            <Text
+              maxFontSizeMultiplier={maxScale('headline')}
+              numberOfLines={1}
+              style={styles.backLabel}
+            >
+              {backLabel}
+            </Text>
+          </View>
         </Pressable>
 
         <View style={styles.titleRow}>
-          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+          <Text
+            accessibilityRole="header"
+            maxFontSizeMultiplier={maxScale('largeTitle')}
+            style={[styles.title, { color: colors.text }]}
+          >
+            {title}
+          </Text>
           {headerRight}
         </View>
         {subtitle ? (
-          <Text style={[styles.subtitle, { color: label(mode, 0.5) }]}>
+          <Text
+            maxFontSizeMultiplier={maxScale('body')}
+            style={[styles.subtitle, { color: label(mode, 0.5) }]}
+          >
             {subtitle}
           </Text>
         ) : null}
 
         {error ? (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {error}
-          </Text>
+          <ErrorState
+            message={error}
+            onRetry={onRefresh ? refresh : undefined}
+            retryLabel={t('common.retry')}
+          />
         ) : null}
 
         {loading && !error ? (
-          <View style={styles.loading}>
-            <ActivityIndicator color={accent.orange} />
-          </View>
+          <ScreenSkeleton testID="subpage-skeleton" />
         ) : (
-          children
+          <Enter>{children}</Enter>
         )}
       </ScrollView>
-    </SafeAreaView>
+
+      {footer ? (
+        <View
+          onLayout={(event) =>
+            setFooterHeight(event.nativeEvent.layout.height)
+          }
+          style={[
+            styles.footer,
+            {
+              backgroundColor: colors.tabbar,
+              borderTopColor: hairline(mode, 0.16),
+              bottom: overlayOffset,
+              // The tab bar already covers the home indicator on iOS; without
+              // one below it the toolbar has to clear it itself.
+              paddingBottom: overlayOffset > 0 ? spacing.sm : insets.bottom,
+            },
+          ]}
+          testID="subpage-footer"
+        >
+          {footer}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -93,45 +183,41 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     flexDirection: 'row',
     gap: 2,
+    marginTop: spacing.xs,
     minHeight: 44,
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.md,
     paddingTop: 2,
   },
   backLabel: {
+    ...font('headline', '400'),
     color: accent.orange,
-    fontSize: 17,
     maxWidth: 260,
   },
-  content: {
-    paddingBottom: 32,
-  },
-  error: {
-    color: accent.red,
-    fontSize: 15,
-    marginTop: 12,
-    paddingHorizontal: 16,
-  },
-  loading: {
-    marginTop: 48,
+  content: {},
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    left: 0,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    position: 'absolute',
+    right: 0,
   },
   safeArea: {
     flex: 1,
   },
   subtitle: {
-    fontSize: 15,
+    ...font('body'),
     marginTop: 3,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.lg,
   },
   title: {
+    ...font('largeTitle'),
     flex: 1,
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: 0.2,
   },
   titleRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.lg,
     paddingTop: 2,
   },
 });

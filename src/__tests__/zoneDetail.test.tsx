@@ -52,6 +52,7 @@ jest.mock('../cloudflare/resources', () => ({
 jest.mock('../cloudflare/analytics', () => ({
   fetchZoneTraffic: jest.fn(),
   invalidateAnalyticsSnapshot: jest.fn(),
+  invalidateZonesRangeSnapshot: jest.fn(),
 }));
 
 jest.mock('../cloudflare/api', () => {

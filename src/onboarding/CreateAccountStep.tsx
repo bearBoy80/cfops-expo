@@ -100,9 +100,14 @@ export function CreateAccountStep({
 
   return (
     <ScrollView
+      // Keyboard insets adjust contentInset instead of shrinking the frame,
+      // so the footer stays reachable and nothing is clipped at the fold.
+      automaticallyAdjustKeyboardInsets
       contentContainerStyle={styles.content}
+      keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      style={styles.scroll}
     >
       <View>
         <Text style={[styles.title, { color: colors.text }]}>
@@ -301,6 +306,9 @@ const styles = StyleSheet.create({
   preferenceTitle: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  scroll: {
+    flex: 1,
   },
   securityNote: {
     alignItems: 'flex-start',

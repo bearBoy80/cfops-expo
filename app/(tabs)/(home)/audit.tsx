@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,7 @@ import {
   Pill,
   SectionLabel,
   SegmentedControl,
+  InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -73,23 +74,19 @@ export default function HomeAudit() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<AuditFilter>('all');
 
-  useEffect(() => {
-    let active = true;
-    void fetchAuditSnapshot(params.accountId || undefined)
-      .then((next) => {
-        if (active) {
-          setSnapshot(next);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      });
-    return () => {
-      active = false;
-    };
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const next = await fetchAuditSnapshot(params.accountId || undefined);
+      setSnapshot(next);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    }
   }, [params.accountId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const missingPermission =
     !!snapshot &&
@@ -125,6 +122,7 @@ export default function HomeAudit() {
       backLabel={t('tabs.home')}
       error={pageError}
       loading={!snapshot && !error}
+      onRefresh={load}
       subtitle={
         scopedName
           ? scopedName
@@ -156,13 +154,13 @@ export default function HomeAudit() {
       ) : null}
 
       {snapshot && snapshot.entries.length === 0 ? (
-        <Text style={[styles.empty, { color: label(mode, 0.45) }]}>
+        <InlineEmpty>
           {t(missingPermission ? 'audit.permissionHint' : 'audit.empty')}
-        </Text>
+        </InlineEmpty>
       ) : visible.length === 0 ? (
-        <Text style={[styles.empty, { color: label(mode, 0.45) }]}>
+        <InlineEmpty>
           {t(filter === 'changes' ? 'audit.emptyChanges' : 'audit.emptyFilter')}
-        </Text>
+        </InlineEmpty>
       ) : (
         groups.map((group) => (
           <View key={group.key}>
@@ -252,12 +250,6 @@ const styles = StyleSheet.create({
   detail: {
     fontSize: 12,
     marginTop: 3,
-  },
-  empty: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 16,
-    paddingHorizontal: 16,
   },
   filter: {
     marginTop: 16,

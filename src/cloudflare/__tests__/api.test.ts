@@ -1,7 +1,12 @@
 import {
   CloudflareApiError,
   createR2Bucket,
+  deleteKvKeys,
+  deleteR2Object,
+  deleteR2Objects,
   getActiveWorkerVersion,
+  getKvEntries,
+  putKvValue,
   getPagesPreviewSetting,
   getWorkerSubdomainConfig,
   getR2ManagedDomain,
@@ -24,6 +29,7 @@ import {
   listRumSites,
   listSubscriptions,
   listZones,
+  resetLegacyListOptions,
   rollbackPagesDeployment,
   rollbackWorkerVersion,
   setPagesPreviewSetting,
@@ -36,6 +42,7 @@ const mockFetch = jest.fn();
 
 beforeEach(() => {
   jest.clearAllMocks();
+  resetLegacyListOptions();
   (globalThis as { fetch: unknown }).fetch = mockFetch;
 });
 
@@ -389,6 +396,166 @@ describe('listKvNamespaces', () => {
   });
 });
 
+describe('getKvEntries', () => {
+  test('reads values with their metadata in one batch', async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        result: {
+          values: {
+            'k-1': { value: 'v1', metadata: { tag: 'a' }, expiration: 1893456000 },
+            'k-2': { value: 'v2' },
+            'k-3': null,
+          },
+        },
+      }),
+    );
+
+    const entries = await getKvEntries('secret', 'acc-1', 'ns-1', [
+      'k-1',
+      'k-2',
+      'k-3',
+    ]);
+
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toBe(
+      'https://api.cloudflare.com/client/v4/accounts/acc-1/storage/kv/namespaces/ns-1/bulk/get',
+    );
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      keys: ['k-1', 'k-2', 'k-3'],
+      type: 'text',
+      withMetadata: true,
+    });
+    expect(entries.get('k-1')).toEqual({
+      value: 'v1',
+      metadata: { tag: 'a' },
+      expiration: 1893456000,
+    });
+    expect(entries.get('k-2')).toEqual({
+      value: 'v2',
+      metadata: null,
+      expiration: null,
+    });
+    // A key that no longer exists comes back as null rather than being omitted.
+    expect(entries.has('k-3')).toBe(false);
+  });
+
+  test('splits more than 100 keys across requests', async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ success: true, result: { values: {} } }),
+    );
+
+    const keys = Array.from({ length: 250 }, (_, index) => `k-${index}`);
+    await getKvEntries('secret', 'acc-1', 'ns-1', keys);
+
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    const sizes = mockFetch.mock.calls.map(
+      ([, init]) => (JSON.parse(init.body) as { keys: string[] }).keys.length,
+    );
+    expect(sizes).toEqual([100, 100, 50]);
+  });
+
+  test('makes no request for an empty key list', async () => {
+    await expect(
+      getKvEntries('secret', 'acc-1', 'ns-1', []),
+    ).resolves.toEqual(new Map());
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('putKvValue', () => {
+  test('writes through the bulk endpoint, carrying metadata and expiry over', async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ success: true, result: { successful_key_count: 1 } }),
+    );
+
+    await putKvValue('secret', 'acc-1', 'ns-1', {
+      key: 'k-1',
+      value: 'v1',
+      metadata: { tag: 'a' },
+      expiration: 4102444800,
+    });
+
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toBe(
+      'https://api.cloudflare.com/client/v4/accounts/acc-1/storage/kv/namespaces/ns-1/bulk',
+    );
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body)).toEqual([
+      {
+        key: 'k-1',
+        value: 'v1',
+        metadata: { tag: 'a' },
+        expiration: 4102444800,
+      },
+    ]);
+  });
+
+  test('drops an expiry that has already passed, which the API would reject', async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ success: true, result: { successful_key_count: 1 } }),
+    );
+
+    await putKvValue('secret', 'acc-1', 'ns-1', {
+      key: 'k-1',
+      value: 'v1',
+      expiration: 1,
+    });
+
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual([
+      { key: 'k-1', value: 'v1' },
+    ]);
+  });
+
+  test('throws when the key comes back as unsuccessful', async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        result: { successful_key_count: 0, unsuccessful_keys: ['k-1'] },
+      }),
+    );
+
+    await expect(
+      putKvValue('secret', 'acc-1', 'ns-1', { key: 'k-1', value: 'v1' }),
+    ).rejects.toBeInstanceOf(CloudflareApiError);
+  });
+});
+
+describe('deleteKvKeys', () => {
+  test('reports the keys that failed instead of throwing', async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        result: { successful_key_count: 1, unsuccessful_keys: ['k-2'] },
+      }),
+    );
+
+    const outcome = await deleteKvKeys('secret', 'acc-1', 'ns-1', [
+      'k-1',
+      'k-2',
+    ]);
+
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toBe(
+      'https://api.cloudflare.com/client/v4/accounts/acc-1/storage/kv/namespaces/ns-1/bulk/delete',
+    );
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual(['k-1', 'k-2']);
+    expect(outcome).toEqual({ deleted: ['k-1'], failed: ['k-2'] });
+  });
+
+  test('treats a null result as a clean delete', async () => {
+    // Several Cloudflare delete endpoints answer `result: null` on success;
+    // reading through it would report a delete that happened as a failure.
+    mockFetch.mockResolvedValue(jsonResponse({ success: true, result: null }));
+
+    await expect(
+      deleteKvKeys('secret', 'acc-1', 'ns-1', ['k-1']),
+    ).resolves.toEqual({ deleted: ['k-1'], failed: [] });
+  });
+});
+
 describe('listD1Databases', () => {
   test('maps databases with optional size fields', async () => {
     mockFetch.mockResolvedValue(
@@ -451,6 +618,123 @@ describe('listWorkerScripts', () => {
         modifiedOn: '2026-08-01T00:00:00Z',
       },
     ]);
+  });
+
+  test('fetches the remaining pages in parallel after the first', async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          result: [{ id: 'worker-a' }],
+          result_info: { total_pages: 3 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ success: true, result: [{ id: 'worker-b' }] }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ success: true, result: [{ id: 'worker-c' }] }),
+      );
+
+    const scripts = await listWorkerScripts('secret', 'acc-1');
+
+    expect(scripts.map((script) => script.id)).toEqual([
+      'worker-a',
+      'worker-b',
+      'worker-c',
+    ]);
+    expect(mockFetch.mock.calls[0][0]).toContain(
+      '/workers/scripts?page=1&per_page=100',
+    );
+    expect(mockFetch.mock.calls[1][0]).toContain(
+      '/workers/scripts?page=2&per_page=100',
+    );
+    expect(mockFetch.mock.calls[2][0]).toContain(
+      '/workers/scripts?page=3&per_page=100',
+    );
+  });
+
+  test('falls back to legacy pagination when list options are rejected', async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            success: false,
+            errors: [
+              {
+                code: 7000,
+                message:
+                  'Invalid list options provided. Review the `page` or `per_page` parameter.',
+              },
+            ],
+          },
+          400,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ success: true, result: [{ id: 'worker-a' }] }),
+      );
+
+    await expect(listWorkerScripts('secret', 'acc-1')).resolves.toEqual([
+      { id: 'worker-a', createdOn: null, modifiedOn: null },
+    ]);
+    // The retry drops the per_page option entirely.
+    expect(mockFetch.mock.calls[1][0]).toContain('/workers/scripts?page=1');
+    expect(mockFetch.mock.calls[1][0]).not.toContain('per_page');
+
+    // The rejection is remembered: refreshes skip the doomed request.
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ success: true, result: [{ id: 'worker-a' }] }),
+    );
+    await listWorkerScripts('secret', 'acc-1');
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(mockFetch.mock.calls[2][0]).not.toContain('per_page');
+  });
+
+  test('legacy pagination still parallelizes the remaining pages', async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            success: false,
+            errors: [{ code: 7000, message: 'Invalid list options provided.' }],
+          },
+          400,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          result: [{ id: 'worker-a' }],
+          result_info: { total_count: 3, per_page: 1 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ success: true, result: [{ id: 'worker-b' }] }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ success: true, result: [{ id: 'worker-c' }] }),
+      );
+
+    const scripts = await listWorkerScripts('secret', 'acc-1');
+
+    expect(scripts.map((script) => script.id)).toEqual([
+      'worker-a',
+      'worker-b',
+      'worker-c',
+    ]);
+    expect(mockFetch.mock.calls[2][0]).toContain('/workers/scripts?page=2');
+    expect(mockFetch.mock.calls[3][0]).toContain('/workers/scripts?page=3');
+    expect(mockFetch.mock.calls[3][0]).not.toContain('per_page');
+  });
+
+  test('does not mask unrelated failures behind the fallback', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ success: false }, 500));
+
+    await expect(listWorkerScripts('secret', 'acc-1')).rejects.toMatchObject({
+      code: 'api',
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -712,8 +996,59 @@ describe('listPagesProjects', () => {
       'project-a',
       'project-b',
     ]);
-    expect(mockFetch.mock.calls[0][0]).toContain('/pages/projects?page=1');
-    expect(mockFetch.mock.calls[1][0]).toContain('/pages/projects?page=2');
+    expect(mockFetch.mock.calls[0][0]).toContain(
+      '/pages/projects?page=1&per_page=100',
+    );
+    expect(mockFetch.mock.calls[1][0]).toContain(
+      '/pages/projects?page=2&per_page=100',
+    );
+  });
+
+  test('stops after the first page when result_info reports one page', async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        result: [{ name: 'only-project' }],
+        result_info: { total_count: 1, total_pages: 1 },
+      }),
+    );
+
+    const projects = await listPagesProjects('secret', 'acc-1');
+
+    expect(projects).toHaveLength(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('falls back to legacy pagination when list options are rejected', async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            success: false,
+            errors: [
+              {
+                code: 7000,
+                message:
+                  'Invalid list options provided. Review the `page` or `per_page` parameter.',
+              },
+            ],
+          },
+          400,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          result: [{ name: 'project-a' }],
+          result_info: { total_count: 1 },
+        }),
+      );
+
+    const projects = await listPagesProjects('secret', 'acc-1');
+
+    expect(projects.map((project) => project.name)).toEqual(['project-a']);
+    expect(mockFetch.mock.calls[1][0]).toContain('/pages/projects?page=1');
+    expect(mockFetch.mock.calls[1][0]).not.toContain('per_page');
   });
 });
 
@@ -998,5 +1333,73 @@ describe('management APIs', () => {
         ended: '2026-08-31T00:00:00Z',
       },
     ]);
+  });
+});
+
+describe('deleteR2Object', () => {
+  const base = 'https://api.cloudflare.com/client/v4';
+
+  test('sends path separators literally but encodes the rest', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ success: true, result: {} }));
+
+    await deleteR2Object('secret', 'acc-1', 'assets', 'img/a b&c?.png');
+
+    const [url, init] = mockFetch.mock.calls[0];
+    // Cloudflare addresses a different object if the slash is percent-encoded,
+    // while an unencoded `?` would be read as the start of a query string.
+    expect(url).toBe(
+      `${base}/accounts/acc-1/r2/buckets/assets/objects/img/a%20b%26c%3F.png`,
+    );
+    expect(init.method).toBe('DELETE');
+  });
+
+  test('keeps nested prefixes addressable', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ success: true, result: {} }));
+
+    await deleteR2Object('secret', 'acc-1', 'assets', 'a/b/c/deep.txt');
+
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      `${base}/accounts/acc-1/r2/buckets/assets/objects/a/b/c/deep.txt`,
+    );
+  });
+});
+
+describe('deleteR2Objects', () => {
+  test('deletes every key and reports them', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ success: true, result: {} }));
+
+    await expect(
+      deleteR2Objects('secret', 'acc-1', 'assets', ['a.txt', 'b.txt']),
+    ).resolves.toEqual({ deleted: ['a.txt', 'b.txt'], failed: [] });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('reports a partial delete instead of throwing', async () => {
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({ success: true, result: {} }))
+      .mockResolvedValueOnce(
+        jsonResponse({ success: false, errors: [{ message: 'nope' }] }, 403),
+      )
+      .mockResolvedValue(jsonResponse({ success: true, result: {} }));
+
+    const outcome = await deleteR2Objects('secret', 'acc-1', 'assets', [
+      'a.txt',
+      'b.txt',
+      'c.txt',
+    ]);
+
+    // The successful deletions already happened, so they must be reported
+    // rather than lost behind a thrown error.
+    expect(outcome.deleted).toEqual(['a.txt', 'c.txt']);
+    expect(outcome.failed).toHaveLength(1);
+    expect(outcome.failed[0].key).toBe('b.txt');
+    expect(outcome.failed[0].cause).toBeInstanceOf(CloudflareApiError);
+  });
+
+  test('does nothing when nothing is selected', async () => {
+    await expect(
+      deleteR2Objects('secret', 'acc-1', 'assets', []),
+    ).resolves.toEqual({ deleted: [], failed: [] });
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });

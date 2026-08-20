@@ -33,6 +33,8 @@ nearby `__tests__/` directory and name them `*.test.ts` or `*.test.tsx`.
 - `src/auth/` owns the local account and authentication state machine.
 - `src/components/` contains shared UI and authentication controls.
 - `src/theme/` is the only source for application color tokens.
+- `oauth-relay/` is the Cloudflare Worker that bounces the OAuth callback back
+  into the app scheme; see `oauth-relay/README.md`.
 - `docs/design-reference/` contains the Figma Make reference export.
 
 First launch follows the four-step Figma onboarding flow. After setup,

@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next';
 import {
   fetchZoneTraffic,
   invalidateAnalyticsSnapshot,
+  invalidateZonesRangeSnapshot,
   type ZoneTraffic,
 } from '@/src/cloudflare/analytics';
 import {
@@ -49,6 +50,7 @@ import {
   useToast,
   zonePillStatus,
 } from '@/src/components/ui';
+import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { accent, foreground, label } from '@/src/theme/tokens';
 import { compactNumber } from '@/src/utils/format';
@@ -65,6 +67,7 @@ export default function ZoneDetail() {
   const router = useRouter();
   const { t } = useTranslation();
   const { mode, colors } = useTheme();
+  const bottomInset = useTabBarInset();
   const { showToast } = useToast();
   const params = useLocalSearchParams<{
     zoneId: string;
@@ -199,6 +202,9 @@ export default function ZoneDetail() {
               await deleteZone(bearerRef.current ?? '', params.zoneId);
               invalidateZonesSnapshot();
               invalidateAnalyticsSnapshot();
+              // The range cache keys on the window only, so a stale entry
+              // would keep aggregating the zone that was just removed.
+              invalidateZonesRangeSnapshot();
               showToast(t('zone.removeDone'));
               router.back();
             }),
@@ -276,7 +282,7 @@ export default function ZoneDetail() {
       style={[styles.safeArea, { backgroundColor: colors.bg }]}
     >
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomInset }]}
         showsVerticalScrollIndicator={false}
       >
         <Pressable
@@ -513,9 +519,7 @@ const styles = StyleSheet.create({
     color: accent.orange,
     fontSize: 17,
   },
-  content: {
-    paddingBottom: 32,
-  },
+  content: {},
   error: {
     color: accent.red,
     fontSize: 15,

@@ -15,6 +15,7 @@ import {
 } from './api';
 import { listConnections } from './connections';
 import { getConnectionBearer, type ConnectionIssue } from './resources';
+import { createTtlCache } from './ttlCache';
 
 /** Ownership metadata attached to every account-scoped resource. */
 export interface AccountScope {
@@ -51,15 +52,13 @@ export interface ResolvedAccount extends AccountScope {
   bearer: string;
 }
 
-/**
- * One bearer per distinct account: the same account can be reachable through
- * several credentials, and account-level data would only be duplicated.
- */
-export async function resolveAccounts(): Promise<{
+interface ResolvedAccounts {
   connectionCount: number;
   accounts: ResolvedAccount[];
   issues: ConnectionIssue[];
-}> {
+}
+
+async function resolveAccountsUncached(): Promise<ResolvedAccounts> {
   const connections = await listConnections();
   const issues: ConnectionIssue[] = [];
   const byAccount = new Map<string, ResolvedAccount>();
@@ -114,6 +113,52 @@ export async function resolveAccounts(): Promise<{
     ),
     issues,
   };
+}
+
+const ACCOUNTS_TTL_MS = 30_000;
+
+/**
+ * Shared across the storage/compute snapshots and management helpers so one
+ * cold load resolves credentials (SecureStore reads, OAuth renewal) once
+ * instead of once per caller.
+ */
+const accountsCache = createTtlCache(ACCOUNTS_TTL_MS, resolveAccountsUncached);
+
+/**
+ * One bearer per distinct account: the same account can be reachable through
+ * several credentials, and account-level data would only be duplicated.
+ *
+ * Returns fresh array instances on every call — callers append their own
+ * issues to the result, which must never leak into the cached value.
+ */
+export async function resolveAccounts(options?: {
+  force?: boolean;
+}): Promise<ResolvedAccounts> {
+  const resolved = await accountsCache.get(options);
+  return {
+    connectionCount: resolved.connectionCount,
+    accounts: [...resolved.accounts],
+    issues: [...resolved.issues],
+  };
+}
+
+export function invalidateResolvedAccounts(): void {
+  accountsCache.invalidate();
+}
+
+/**
+ * Bearer for one account, served from the shared resolution cache so
+ * metrics fetches after a snapshot do not re-read the keychain per account.
+ */
+export async function getAccountBearer(accountId: string): Promise<string> {
+  const { accounts } = await resolveAccounts();
+  const bearer = accounts.find(
+    (account) => account.accountId === accountId,
+  )?.bearer;
+  if (!bearer) {
+    throw new CloudflareApiError('missing-credential');
+  }
+  return bearer;
 }
 
 /** Records at most one issue per account so missing scopes stay readable. */
@@ -212,6 +257,7 @@ async function fetchStorage(): Promise<StorageSnapshot> {
 }
 
 async function fetchCompute(): Promise<ComputeSnapshot> {
+  const startedAt = Date.now();
   const { connectionCount, accounts, issues } = await resolveAccounts();
   const workers: WorkerItem[] = [];
   const pages: PagesProjectItem[] = [];
@@ -225,14 +271,24 @@ async function fetchCompute(): Promise<ComputeSnapshot> {
       };
       await Promise.all([
         listWorkerScripts(account.bearer, account.accountId)
-          .then((items) =>
-            workers.push(...items.map((item) => ({ ...item, ...scope }))),
-          )
+          .then((items) => {
+            if (__DEV__) {
+              console.log(
+                `[compute] ${account.accountName}: ${items.length} workers`,
+              );
+            }
+            workers.push(...items.map((item) => ({ ...item, ...scope })));
+          })
           .catch((cause) => pushIssue(issues, account, cause)),
         listPagesProjects(account.bearer, account.accountId)
-          .then((items) =>
-            pages.push(...items.map((item) => ({ ...item, ...scope }))),
-          )
+          .then((items) => {
+            if (__DEV__) {
+              console.log(
+                `[compute] ${account.accountName}: ${items.length} pages projects`,
+              );
+            }
+            pages.push(...items.map((item) => ({ ...item, ...scope })));
+          })
           .catch((cause) => pushIssue(issues, account, cause)),
       ]);
     }),
@@ -240,6 +296,10 @@ async function fetchCompute(): Promise<ComputeSnapshot> {
 
   workers.sort((a, b) => a.id.localeCompare(b.id));
   pages.sort((a, b) => a.name.localeCompare(b.name));
+
+  if (__DEV__) {
+    console.log(`[compute] snapshot loaded in ${Date.now() - startedAt}ms`);
+  }
 
   return {
     connectionCount,
@@ -256,49 +316,28 @@ async function fetchCompute(): Promise<ComputeSnapshot> {
 
 const SNAPSHOT_TTL_MS = 30_000;
 
-let storageCache: { at: number; promise: Promise<StorageSnapshot> } | null =
-  null;
-let computeCache: { at: number; promise: Promise<ComputeSnapshot> } | null =
-  null;
+const storageCache = createTtlCache(SNAPSHOT_TTL_MS, fetchStorage);
+const computeCache = createTtlCache(SNAPSHOT_TTL_MS, fetchCompute);
 
 export function fetchStorageSnapshot(options?: {
   force?: boolean;
 }): Promise<StorageSnapshot> {
-  const now = Date.now();
-  if (!options?.force && storageCache && now - storageCache.at < SNAPSHOT_TTL_MS) {
-    return storageCache.promise;
-  }
-  const promise = fetchStorage();
-  storageCache = { at: now, promise };
-  promise.catch(() => {
-    if (storageCache?.promise === promise) {
-      storageCache = null;
-    }
-  });
-  return promise;
+  return storageCache.get(options);
 }
 
 export function fetchComputeSnapshot(options?: {
   force?: boolean;
 }): Promise<ComputeSnapshot> {
-  const now = Date.now();
-  if (!options?.force && computeCache && now - computeCache.at < SNAPSHOT_TTL_MS) {
-    return computeCache.promise;
-  }
-  const promise = fetchCompute();
-  computeCache = { at: now, promise };
-  promise.catch(() => {
-    if (computeCache?.promise === promise) {
-      computeCache = null;
-    }
-  });
-  return promise;
+  return computeCache.get(options);
 }
 
 export function invalidateStorageSnapshot(): void {
-  storageCache = null;
+  storageCache.invalidate();
+  // A forced refresh should re-check credentials too (e.g. renewed OAuth).
+  accountsCache.invalidate();
 }
 
 export function invalidateComputeSnapshot(): void {
-  computeCache = null;
+  computeCache.invalidate();
+  accountsCache.invalidate();
 }

@@ -32,6 +32,7 @@ import {
   fetchWorkerMetrics,
   type WorkerMetrics,
 } from '@/src/cloudflare/analytics';
+import { invalidateComputeSnapshot } from '@/src/cloudflare/accountResources';
 import {
   fetchZonesSnapshot,
   getBearerForConnection,
@@ -47,6 +48,7 @@ import {
   showActionMenu,
   ToggleRow,
   useToast,
+  InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -122,57 +124,43 @@ export default function WorkerDetail() {
     [params.accountId, params.script],
   );
 
-  useEffect(() => {
-    let active = true;
-    void getBearerForConnection(params.connectionId)
-      .then(async (resolved) => {
-        if (!active) {
-          return;
-        }
-        setBearer(resolved);
-        await Promise.all([
-          fetchWorkerMetrics(resolved, params.accountId)
-            .then((all) => {
-              if (active) {
-                setMetrics(all.get(params.script) ?? null);
-              }
-            })
-            .catch(() => {}),
-          fetchWorkerHourlySeries(resolved, params.accountId, params.script)
-            .then((points) => {
-              if (active) {
-                setSeries(points);
-              }
-            })
-            .catch(() => {}),
-          loadManagement(resolved),
-          fetchZonesSnapshot()
-            .then((snapshot) => {
-              if (active) {
-                setZones(
-                  snapshot.zones
-                    .filter((zone) => zone.accountId === params.accountId)
-                    .map((zone) => ({ id: zone.id, name: zone.name })),
-                );
-              }
-            })
-            .catch(() => {}),
-        ]);
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
-      });
-    return () => {
-      active = false;
-    };
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const resolved = await getBearerForConnection(params.connectionId);
+      setBearer(resolved);
+      await Promise.all([
+        fetchWorkerMetrics(resolved, params.accountId)
+          .then((all) => {
+            setMetrics(all.get(params.script) ?? null);
+          })
+          .catch(() => {}),
+        fetchWorkerHourlySeries(resolved, params.accountId, params.script)
+          .then((points) => {
+            setSeries(points);
+          })
+          .catch(() => {}),
+        loadManagement(resolved),
+        fetchZonesSnapshot()
+          .then((snapshot) => {
+            setZones(
+              snapshot.zones
+                .filter((zone) => zone.accountId === params.accountId)
+                .map((zone) => ({ id: zone.id, name: zone.name })),
+            );
+          })
+          .catch(() => {}),
+      ]);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    } finally {
+      setLoading(false);
+    }
   }, [params.accountId, params.connectionId, params.script, loadManagement]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const confirmRollback = (version: CfWorkerVersion) => {
     if (!bearer || busy) {
@@ -198,6 +186,8 @@ export default function WorkerDetail() {
               version.id,
             )
               .then(async () => {
+                // The list row shows modifiedOn, which the rollback bumps.
+                invalidateComputeSnapshot();
                 showToast(t('compute.rollbackDone'));
                 await loadManagement(bearer);
               })
@@ -299,6 +289,7 @@ export default function WorkerDetail() {
       backLabel={t('compute.title')}
       error={error}
       loading={loading}
+      onRefresh={load}
       subtitle={params.accountName}
       title={params.script}
     >
@@ -339,9 +330,9 @@ export default function WorkerDetail() {
             chevron={false}
             last
             left={
-              <Text style={[styles.empty, { color: label(mode, 0.4) }]}>
+              <InlineEmpty>
                 {t('compute.noSeries')}
-              </Text>
+              </InlineEmpty>
             }
           />
         )}
@@ -458,9 +449,9 @@ export default function WorkerDetail() {
             chevron={false}
             last
             left={
-              <Text style={[styles.empty, { color: label(mode, 0.4) }]}>
+              <InlineEmpty>
                 {t('compute.noVersions')}
-              </Text>
+              </InlineEmpty>
             }
           />
         )}

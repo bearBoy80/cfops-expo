@@ -7,11 +7,13 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Animated, Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
+import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { AlertCircle, CheckCircle2 } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
-import { accent, hairline } from '../../theme/tokens';
+import { accent, font, hairline, maxScale } from '../../theme/tokens';
+import { haptics } from '../../utils/haptics';
 
 export type ToastKind = 'success' | 'error';
 
@@ -41,7 +43,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   };
   const { mode, colors } = useTheme();
   const [toast, setToast] = useState<{ message: string; kind: ToastKind } | null>(null);
-  const opacity = useRef(new Animated.Value(0)).current;
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dismiss = useCallback(() => {
@@ -49,16 +50,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       clearTimeout(hideTimer.current);
       hideTimer.current = null;
     }
-    Animated.timing(opacity, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) {
-        setToast(null);
-      }
-    });
-  }, [opacity]);
+    // Unmounting triggers the exiting animation.
+    setToast(null);
+  }, []);
 
   const showToast = useCallback(
     (message: string, kind: ToastKind = 'success') => {
@@ -68,21 +62,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       if (hideTimer.current) {
         clearTimeout(hideTimer.current);
       }
+      if (kind === 'error') {
+        haptics.error();
+      } else {
+        haptics.success();
+      }
       setToast({ message, kind });
-      opacity.setValue(0);
-      Animated.spring(opacity, {
-        toValue: 1,
-        useNativeDriver: true,
-        damping: 18,
-        stiffness: 260,
-        mass: 0.7,
-      }).start();
       hideTimer.current = setTimeout(
         dismiss,
         kind === 'error' ? ERROR_VISIBLE_MS : SUCCESS_VISIBLE_MS,
       );
     },
-    [dismiss, opacity],
+    [dismiss],
   );
 
   const value = useMemo(() => ({ showToast }), [showToast]);
@@ -95,28 +86,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {toast ? (
         <Animated.View
           accessibilityLiveRegion="polite"
+          entering={FadeInUp.springify().damping(18).stiffness(260).mass(0.7)}
+          exiting={FadeOutUp.duration(180)}
           pointerEvents="box-none"
-          style={[
-            styles.wrap,
-            {
-              opacity,
-              top: insets.top + 8,
-              transform: [
-                {
-                  translateY: opacity.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-16, 0],
-                  }),
-                },
-                {
-                  scale: opacity.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.95, 1],
-                  }),
-                },
-              ],
-            },
-          ]}
+          style={[styles.wrap, { top: insets.top + 8 }]}
         >
           <Pressable
             accessibilityRole="alert"
@@ -131,7 +104,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             testID="toast"
           >
             <Icon color={iconColor} size={18} />
-            <Text numberOfLines={3} style={[styles.text, { color: colors.text }]} testID="toast-message">
+            <Text
+              maxFontSizeMultiplier={maxScale('body')}
+              numberOfLines={3}
+              style={[styles.text, { color: colors.text }]}
+              testID="toast-message"
+            >
               {toast.message}
             </Text>
           </Pressable>
@@ -143,9 +121,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 const styles = StyleSheet.create({
   text: {
+    ...font('body', '500'),
     flexShrink: 1,
-    fontSize: 15,
-    fontWeight: '500',
   },
   toast: {
     alignItems: 'center',

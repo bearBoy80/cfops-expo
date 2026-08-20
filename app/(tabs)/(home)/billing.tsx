@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +8,7 @@ import {
   type BillingSnapshot,
 } from '@/src/cloudflare/management';
 import { ZoneSubpage } from '@/src/components/ZoneSubpage';
-import { Card, SectionLabel } from '@/src/components/ui';
+import { Card, SectionLabel, InlineEmpty } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { accent, hairline, label } from '@/src/theme/tokens';
@@ -24,23 +24,19 @@ export default function HomeBilling() {
   const [snapshot, setSnapshot] = useState<BillingSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    void fetchBillingSnapshot(params.accountId || undefined)
-      .then((next) => {
-        if (active) {
-          setSnapshot(next);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      });
-    return () => {
-      active = false;
-    };
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const next = await fetchBillingSnapshot(params.accountId || undefined);
+      setSnapshot(next);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    }
   }, [params.accountId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const items = useMemo(
     () => groupSubscriptions(snapshot?.subscriptions ?? []),
@@ -53,9 +49,19 @@ export default function HomeBilling() {
   const currency = items[0]?.currency ?? 'USD';
   const accounts = new Set(items.map((item) => item.accountId));
   const showAccount = !params.accountName && accounts.size > 1;
+  // Subscriptions need `Billing Read`, which has no OAuth scope, so the generic
+  // "add the permission" error would send the user looking for a setting that
+  // does not exist.
+  const missingPermission =
+    !!snapshot &&
+    snapshot.subscriptions.length === 0 &&
+    snapshot.issues.some((issue) => issue.cause.code === 'forbidden');
   const pageError =
     error ??
-    (snapshot && snapshot.subscriptions.length === 0 && snapshot.issues[0]
+    (snapshot &&
+    snapshot.subscriptions.length === 0 &&
+    snapshot.issues[0] &&
+    !missingPermission
       ? cloudflareErrorMessage(snapshot.issues[0].cause)
       : null);
 
@@ -64,6 +70,7 @@ export default function HomeBilling() {
       backLabel={t('tabs.home')}
       error={pageError}
       loading={!snapshot && !error}
+      onRefresh={load}
       subtitle={params.accountName || t('home.mgmtBillingSub')}
       title={t('home.mgmtBilling')}
     >
@@ -78,9 +85,9 @@ export default function HomeBilling() {
 
       <SectionLabel>{t('billing.sectionUsage')}</SectionLabel>
       {items.length === 0 ? (
-        <Text style={[styles.empty, { color: label(mode, 0.45) }]}>
-          {t('billing.empty')}
-        </Text>
+        <InlineEmpty>
+          {t(missingPermission ? 'billing.permissionHint' : 'billing.empty')}
+        </InlineEmpty>
       ) : (
         <Card>
           {items.map((item, index) => (
@@ -141,11 +148,6 @@ export default function HomeBilling() {
 }
 
 const styles = StyleSheet.create({
-  empty: {
-    fontSize: 14,
-    lineHeight: 20,
-    paddingHorizontal: 16,
-  },
   hero: {
     borderRadius: 16,
     marginHorizontal: 16,

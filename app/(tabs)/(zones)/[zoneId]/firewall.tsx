@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Linking, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -15,6 +15,8 @@ import {
   MetricTile,
   Pill,
   type Status,
+  InlineEmpty,
+  PermissionNotice,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -49,31 +51,35 @@ export default function ZoneFirewall() {
   const [events, setEvents] = useState<ZoneFirewallEvent[] | null>(null);
   const [threats, setThreats] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+
+  const load = useCallback(async () => {
+    setError(null);
+    setPermissionDenied(false);
+    try {
+      const bearer = await getBearerForConnection(params.connectionId);
+      // Firewall analytics are permission-gated (zone Analytics read). A
+      // failure here should surface a clear permission hint, not block the
+      // whole page with a generic error.
+      let denied = false;
+      const [eventsResult, hourly] = await Promise.all([
+        fetchZoneFirewallEvents(bearer, params.zoneId).catch(() => {
+          denied = true;
+          return [] as ZoneFirewallEvent[];
+        }),
+        fetchZoneHourly(bearer, params.zoneId).catch(() => null),
+      ]);
+      setPermissionDenied(denied);
+      setEvents(eventsResult);
+      setThreats(hourly?.threats ?? null);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    }
+  }, [params.zoneId, params.connectionId]);
 
   useEffect(() => {
-    let active = true;
-    void getBearerForConnection(params.connectionId)
-      .then((bearer) =>
-        Promise.all([
-          fetchZoneFirewallEvents(bearer, params.zoneId),
-          fetchZoneHourly(bearer, params.zoneId).catch(() => null),
-        ]),
-      )
-      .then(([eventsResult, hourly]) => {
-        if (active) {
-          setEvents(eventsResult);
-          setThreats(hourly?.threats ?? null);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [params.zoneId, params.connectionId]);
+    void load();
+  }, [load]);
 
   const challenged = (events ?? []).filter((event) =>
     event.action.includes('challenge'),
@@ -84,10 +90,22 @@ export default function ZoneFirewall() {
       backLabel={params.name ?? t('zone.fallbackTitle')}
       error={error}
       loading={!events}
+      onRefresh={load}
       subtitle={params.name}
       title={t('zone.svcFirewall')}
     >
-      {events ? (
+      {permissionDenied ? (
+        <PermissionNotice
+          title={t('common.permissionRequired')}
+          message={t('zone.firewallNoPerm')}
+          actionLabel={t('common.openApiTokens')}
+          onAction={() => {
+            void Linking.openURL(
+              'https://dash.cloudflare.com/profile/api-tokens',
+            );
+          }}
+        />
+      ) : events ? (
         <>
           <View style={styles.tileRow}>
             <MetricTile
@@ -146,9 +164,9 @@ export default function ZoneFirewall() {
               ))}
             </Card>
           ) : (
-            <Text style={[styles.empty, { color: label(mode, 0.4) }]}>
+            <InlineEmpty>
               {t('firewall.noEvents')}
-            </Text>
+            </InlineEmpty>
           )}
         </>
       ) : null}
@@ -157,11 +175,6 @@ export default function ZoneFirewall() {
 }
 
 const styles = StyleSheet.create({
-  empty: {
-    fontSize: 15,
-    marginTop: 12,
-    textAlign: 'center',
-  },
   eventCopy: {
     flex: 1,
     minWidth: 0,

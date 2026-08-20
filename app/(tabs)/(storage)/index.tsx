@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -11,11 +11,13 @@ import {
   Text,
   TextInput,
   View,
+  type ListRenderItemInfo,
 } from 'react-native';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { Archive, Database, HardDrive, KeyRound, Plus } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   createD1Database,
   createKvNamespace,
@@ -24,28 +26,45 @@ import {
 import {
   fetchStorageSnapshot,
   invalidateStorageSnapshot,
+  type D1DatabaseItem,
+  type KvNamespaceItem,
+  type R2BucketItem,
   type StorageSnapshot,
 } from '@/src/cloudflare/accountResources';
 import {
   fetchStorageMetrics,
+  type D1DatabaseMetrics,
+  type KvNamespaceMetrics,
+  type R2BucketMetrics,
   type StorageMetrics,
 } from '@/src/cloudflare/analytics';
 import { getBearerForConnection } from '@/src/cloudflare/resources';
 import {
-  Card,
+  CardRow,
   EmptyState,
   ListRow,
   MetricTile,
+  ScopeBanner,
+  SearchField,
   SectionLabel,
   SegmentedControl,
   useToast,
+  InlineEmpty,
+  ScreenSkeleton,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { CollapsibleTitleContainer, CompactHeader, useCollapsibleTitle } from '@/src/components/CollapsibleTitle';
+import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { useAccountScope } from '@/src/state/accountScope';
+import { haptics } from '@/src/utils/haptics';
+import { showResourceMenu } from '@/src/utils/resourceMenu';
 import { accent, foreground, label, tint } from '@/src/theme/tokens';
 import { compactNumber, formatBytes } from '@/src/utils/format';
 
 type StorageSegment = 'r2' | 'kv' | 'd1';
+type StorageListItem = R2BucketItem | KvNamespaceItem | D1DatabaseItem;
 
 const R2_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/;
 const D1_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,62}$/;
@@ -60,16 +79,268 @@ interface CreatorState {
   location: string;
 }
 
+const R2Row = memo(function R2Row({
+  bucket,
+  bucketMetrics,
+  first,
+  last,
+  showAccountName,
+  onOpen,
+  onMenu,
+}: {
+  bucket: R2BucketItem;
+  bucketMetrics: R2BucketMetrics | undefined;
+  first: boolean;
+  last: boolean;
+  showAccountName: boolean;
+  onOpen: (bucket: R2BucketItem) => void;
+  onMenu: (bucket: R2BucketItem) => void;
+}) {
+  const { t } = useTranslation();
+  const { mode, colors } = useTheme();
+  const sub = [
+    showAccountName ? bucket.accountName : null,
+    bucket.location ? bucket.location.toUpperCase() : null,
+    bucketMetrics
+      ? t('storage.objectsCount', { count: bucketMetrics.objectCount })
+      : null,
+    bucketMetrics ? formatBytes(bucketMetrics.payloadSize) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <CardRow first={first} last={last}>
+      <ListRow
+        last={last}
+        testID={`storage-bucket-${bucket.name}`}
+        onLongPress={() => onMenu(bucket)}
+        onPress={() => onOpen(bucket)}
+        left={
+          <View style={styles.row}>
+            <View
+              style={[
+                styles.iconBadge,
+                { backgroundColor: tint(accent.orange, '22') },
+              ]}
+            >
+              <HardDrive color={accent.orange} size={15} />
+            </View>
+            <View style={styles.copy}>
+              <Text
+                numberOfLines={1}
+                style={[styles.name, { color: colors.text }]}
+              >
+                {bucket.name}
+              </Text>
+              {sub ? (
+                <Text
+                  numberOfLines={1}
+                  style={[styles.sub, { color: label(mode, 0.4) }]}
+                >
+                  {sub}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        }
+      />
+    </CardRow>
+  );
+});
+
+const KvRow = memo(function KvRow({
+  namespace,
+  kvMetrics,
+  first,
+  last,
+  showAccountName,
+  onOpen,
+}: {
+  namespace: KvNamespaceItem;
+  kvMetrics: KvNamespaceMetrics | undefined;
+  first: boolean;
+  last: boolean;
+  showAccountName: boolean;
+  onOpen: (namespace: KvNamespaceItem) => void;
+}) {
+  const { t } = useTranslation();
+  const { mode, colors } = useTheme();
+  const sub = [
+    showAccountName ? namespace.accountName : null,
+    kvMetrics ? t('storage.keysCount', { count: kvMetrics.keyCount }) : null,
+    kvMetrics ? formatBytes(kvMetrics.byteCount) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <CardRow first={first} last={last}>
+      <ListRow
+        last={last}
+        testID={`storage-kv-${namespace.id}`}
+        onPress={() => onOpen(namespace)}
+        right={
+          kvMetrics ? (
+            <Text style={[styles.ops, { color: label(mode, 0.4) }]}>
+              {t('storage.reads', { value: compactNumber(kvMetrics.reads) })}{' '}
+              {t('storage.writes', { value: compactNumber(kvMetrics.writes) })}
+            </Text>
+          ) : undefined
+        }
+        left={
+          <View style={styles.row}>
+            <View
+              style={[
+                styles.iconBadge,
+                { backgroundColor: tint(accent.blue, '22') },
+              ]}
+            >
+              <KeyRound color={accent.blue} size={15} />
+            </View>
+            <View style={styles.copy}>
+              <Text
+                numberOfLines={1}
+                style={[styles.mono, { color: colors.text }]}
+              >
+                {namespace.title}
+              </Text>
+              {sub ? (
+                <Text
+                  numberOfLines={1}
+                  style={[styles.sub, { color: label(mode, 0.4) }]}
+                >
+                  {sub}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        }
+      />
+    </CardRow>
+  );
+});
+
+const D1Row = memo(function D1Row({
+  database,
+  d1Metrics,
+  first,
+  last,
+  showAccountName,
+  onOpen,
+}: {
+  database: D1DatabaseItem;
+  d1Metrics: D1DatabaseMetrics | undefined;
+  first: boolean;
+  last: boolean;
+  showAccountName: boolean;
+  onOpen: (database: D1DatabaseItem) => void;
+}) {
+  const { t } = useTranslation();
+  const { mode, colors } = useTheme();
+  const sub = [
+    showAccountName ? database.accountName : null,
+    database.fileSize !== null ? formatBytes(database.fileSize) : null,
+    database.numTables !== null
+      ? t('storage.tablesCount', { count: database.numTables })
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <CardRow first={first} last={last}>
+      <ListRow
+        last={last}
+        testID={`storage-d1-${database.uuid}`}
+        onPress={() => onOpen(database)}
+        right={
+          d1Metrics ? (
+            <Text style={[styles.ops, { color: label(mode, 0.4) }]}>
+              {t('storage.reads', {
+                value: compactNumber(d1Metrics.readQueries),
+              })}{' '}
+              {t('storage.writes', {
+                value: compactNumber(d1Metrics.writeQueries),
+              })}
+            </Text>
+          ) : undefined
+        }
+        left={
+          <View style={styles.row}>
+            <View
+              style={[
+                styles.iconBadge,
+                { backgroundColor: tint(accent.purple, '22') },
+              ]}
+            >
+              <Database color={accent.purple} size={15} />
+            </View>
+            <View style={styles.copy}>
+              <Text
+                numberOfLines={1}
+                style={[styles.name, { color: colors.text }]}
+              >
+                {database.name}
+              </Text>
+              {sub ? (
+                <Text
+                  numberOfLines={1}
+                  style={[styles.sub, { color: label(mode, 0.4) }]}
+                >
+                  {sub}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        }
+      />
+    </CardRow>
+  );
+});
+
+function bucketMenu(
+  bucket: R2BucketItem,
+  t: TFunction,
+  onCopied: () => void,
+): void {
+  showResourceMenu({
+    title: bucket.name,
+    copyLabel: t('common.copyName'),
+    copyValue: bucket.name,
+    dashboardPath: `${bucket.accountId}/r2/default/buckets/${bucket.name}`,
+    t,
+    onCopied,
+  });
+}
+
+/** Reuses the previous map when no account's metrics actually changed. */
+function sameMetrics(
+  prev: Map<string, StorageMetrics>,
+  next: Map<string, StorageMetrics>,
+): boolean {
+  if (prev.size !== next.size) {
+    return false;
+  }
+  for (const [accountId, value] of next) {
+    if (prev.get(accountId) !== value) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export default function Storage() {
   const router = useRouter();
   const { t } = useTranslation();
   const { mode, colors } = useTheme();
+  const bottomInset = useTabBarInset();
+  const { scrollY, onScroll } = useCollapsibleTitle();
   const { showToast } = useToast();
+  const { scope } = useAccountScope();
   const [snapshot, setSnapshot] = useState<StorageSnapshot | null>(null);
   const [metrics, setMetrics] = useState<Map<string, StorageMetrics>>(
     new Map(),
   );
   const [segment, setSegment] = useState<StorageSegment>('r2');
+  const [query, setQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [creator, setCreator] = useState<CreatorState | null>(null);
   const [creatorError, setCreatorError] = useState<string | null>(null);
@@ -77,11 +348,13 @@ export default function Storage() {
 
   const load = useCallback((force: boolean) => {
     return fetchStorageSnapshot({ force })
-      .then(async (next) => {
+      .then((next) => {
         setSnapshot(next);
-        // Metrics are best-effort; missing data renders as "—".
+        // Metrics are best-effort and finish in the background so the
+        // pull-to-refresh spinner never waits on GraphQL; missing data
+        // renders as "—".
         const collected = new Map<string, StorageMetrics>();
-        await Promise.all(
+        void Promise.all(
           next.accounts.map(async (account) => {
             try {
               const bearer = await getBearerForConnection(
@@ -89,14 +362,19 @@ export default function Storage() {
               );
               collected.set(
                 account.accountId,
-                await fetchStorageMetrics(bearer, account.accountId),
+                await fetchStorageMetrics(bearer, account.accountId, {
+                  force,
+                }),
               );
             } catch {
               // Ignore: quota or permission failures leave metrics empty.
             }
           }),
-        );
-        setMetrics(collected);
+        ).then(() => {
+          setMetrics((prev) =>
+            sameMetrics(prev, collected) ? prev : collected,
+          );
+        });
       })
       .catch(() => {
         // Keep the previous snapshot when a refresh fails outright.
@@ -110,12 +388,73 @@ export default function Storage() {
   );
 
   const refresh = () => {
+    haptics.tap();
     setRefreshing(true);
     invalidateStorageSnapshot();
     void load(true).finally(() => setRefreshing(false));
   };
 
-  const showAccountName = (snapshot?.accounts.length ?? 0) > 1;
+  const showAccountName = !scope && (snapshot?.accounts.length ?? 0) > 1;
+  const scopedName =
+    snapshot?.accounts.find((account) => account.accountId === scope)
+      ?.accountName ?? null;
+
+  const buckets = useMemo(
+    () =>
+      scope
+        ? (snapshot?.buckets ?? []).filter((b) => b.accountId === scope)
+        : snapshot?.buckets ?? [],
+    [snapshot, scope],
+  );
+  const kvNamespaces = useMemo(
+    () =>
+      scope
+        ? (snapshot?.kvNamespaces ?? []).filter((n) => n.accountId === scope)
+        : snapshot?.kvNamespaces ?? [],
+    [snapshot, scope],
+  );
+  const d1Databases = useMemo(
+    () =>
+      scope
+        ? (snapshot?.d1Databases ?? []).filter((d) => d.accountId === scope)
+        : snapshot?.d1Databases ?? [],
+    [snapshot, scope],
+  );
+
+  const needle = query.trim().toLowerCase();
+  const visibleBuckets = useMemo(
+    () =>
+      needle
+        ? buckets.filter(
+            (bucket) =>
+              bucket.name.toLowerCase().includes(needle) ||
+              bucket.accountName.toLowerCase().includes(needle),
+          )
+        : buckets,
+    [buckets, needle],
+  );
+  const visibleKv = useMemo(
+    () =>
+      needle
+        ? kvNamespaces.filter(
+            (namespace) =>
+              namespace.title.toLowerCase().includes(needle) ||
+              namespace.accountName.toLowerCase().includes(needle),
+          )
+        : kvNamespaces,
+    [kvNamespaces, needle],
+  );
+  const visibleD1 = useMemo(
+    () =>
+      needle
+        ? d1Databases.filter(
+            (database) =>
+              database.name.toLowerCase().includes(needle) ||
+              database.accountName.toLowerCase().includes(needle),
+          )
+        : d1Databases,
+    [d1Databases, needle],
+  );
 
   const r2Totals = useMemo(() => {
     if (!snapshot) {
@@ -124,7 +463,7 @@ export default function Storage() {
     let stored = 0;
     let objects = 0;
     let found = false;
-    for (const bucket of snapshot.buckets) {
+    for (const bucket of buckets) {
       const bucketMetrics = metrics
         .get(bucket.accountId)
         ?.r2.get(bucket.name);
@@ -135,10 +474,12 @@ export default function Storage() {
       }
     }
     return found ? { stored, objects } : null;
-  }, [snapshot, metrics]);
+  }, [snapshot, buckets, metrics]);
 
   const openCreator = () => {
-    const account = snapshot?.accounts[0];
+    const account =
+      snapshot?.accounts.find((item) => item.accountId === scope) ??
+      snapshot?.accounts[0];
     if (!account) {
       return;
     }
@@ -210,6 +551,133 @@ export default function Storage() {
       .finally(() => setCreating(false));
   };
 
+  const openBucket = useCallback(
+    (bucket: R2BucketItem) => {
+      router.push({
+        pathname: '/(tabs)/(storage)/r2/[bucket]',
+        params: {
+          bucket: bucket.name,
+          accountId: bucket.accountId,
+          connectionId: bucket.connectionId,
+          location: bucket.location,
+        },
+      });
+    },
+    [router],
+  );
+
+  const openKv = useCallback(
+    (namespace: KvNamespaceItem) => {
+      router.push({
+        pathname: '/(tabs)/(storage)/kv/[namespace]',
+        params: {
+          namespace: namespace.id,
+          accountId: namespace.accountId,
+          connectionId: namespace.connectionId,
+          accountName: namespace.accountName,
+          title: namespace.title,
+        },
+      } as unknown as Href);
+    },
+    [router],
+  );
+
+  const openD1 = useCallback(
+    (database: D1DatabaseItem) => {
+      router.push({
+        pathname: '/(tabs)/(storage)/d1/[database]',
+        params: {
+          database: database.uuid,
+          accountId: database.accountId,
+          connectionId: database.connectionId,
+          accountName: database.accountName,
+          name: database.name,
+          ...(database.createdAt ? { createdAt: database.createdAt } : {}),
+          ...(database.version ? { version: database.version } : {}),
+        },
+      } as unknown as Href);
+    },
+    [router],
+  );
+
+  const onCopied = useCallback(
+    () => showToast(t('common.copied')),
+    [showToast, t],
+  );
+  const onBucketMenu = useCallback(
+    (bucket: R2BucketItem) => bucketMenu(bucket, t, onCopied),
+    [t, onCopied],
+  );
+
+  const items: StorageListItem[] =
+    segment === 'r2'
+      ? visibleBuckets
+      : segment === 'kv'
+        ? visibleKv
+        : visibleD1;
+
+  const renderItem = useCallback(
+    ({ item, index }: ListRenderItemInfo<StorageListItem>) => {
+      const first = index === 0;
+      if ('uuid' in item) {
+        return (
+          <D1Row
+            database={item}
+            d1Metrics={metrics.get(item.accountId)?.d1.get(item.uuid)}
+            first={first}
+            last={index === visibleD1.length - 1}
+            showAccountName={showAccountName}
+            onOpen={openD1}
+          />
+        );
+      }
+      if ('title' in item) {
+        return (
+          <KvRow
+            namespace={item}
+            kvMetrics={metrics.get(item.accountId)?.kv.get(item.id)}
+            first={first}
+            last={index === visibleKv.length - 1}
+            showAccountName={showAccountName}
+            onOpen={openKv}
+          />
+        );
+      }
+      return (
+        <R2Row
+          bucket={item}
+          bucketMetrics={metrics.get(item.accountId)?.r2.get(item.name)}
+          first={first}
+          last={index === visibleBuckets.length - 1}
+          showAccountName={showAccountName}
+          onOpen={openBucket}
+          onMenu={onBucketMenu}
+        />
+      );
+    },
+    [
+      metrics,
+      visibleBuckets.length,
+      visibleKv.length,
+      visibleD1.length,
+      showAccountName,
+      openBucket,
+      onBucketMenu,
+      openKv,
+      openD1,
+    ],
+  );
+
+  const keyExtractor = useCallback((item: StorageListItem) => {
+    if ('uuid' in item) {
+      return `${item.accountId}-${item.uuid}`;
+    }
+    if ('title' in item) {
+      return `${item.accountId}-${item.id}`;
+    }
+    return `${item.accountId}-${item.name}`;
+  }, []);
+
   if (!snapshot) {
     return (
       <SafeAreaView
@@ -219,9 +687,7 @@ export default function Storage() {
         <Text style={[styles.title, styles.titleStandalone, { color: colors.text }]}>
           {t('storage.title')}
         </Text>
-        <View style={styles.loading}>
-          <ActivityIndicator color={accent.orange} />
-        </View>
+        <ScreenSkeleton testID="screen-skeleton" />
       </SafeAreaView>
     );
   }
@@ -250,374 +716,149 @@ export default function Storage() {
     ? snapshot.accounts.find((item) => item.accountId === creator.accountId)
     : null;
 
+  const header = (
+    <>
+      <View style={styles.header}>
+        <View style={styles.headerCopy}>
+          <Text style={[styles.title, { color: colors.text }]}>
+            {t('storage.title')}
+          </Text>
+          <Text style={[styles.subtitle, { color: label(mode, 0.5) }]}>
+            {t('storage.subtitle')}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityLabel={
+            segment === 'r2'
+              ? t('storage.createBucket')
+              : segment === 'kv'
+                ? t('storage.createNamespace')
+                : t('storage.createDatabase')
+          }
+          accessibilityRole="button"
+          hitSlop={6}
+          onPress={openCreator}
+          style={styles.addButton}
+          testID="storage-add"
+        >
+          <Plus color={foreground.onAccent} size={18} />
+        </Pressable>
+      </View>
+      <ScopeBanner name={scopedName} />
+
+      {snapshot.issues.map((issue) => (
+        <Text
+          key={issue.connectionId + issue.label}
+          style={[styles.issue, { color: accent.yellow }]}
+        >
+          {issue.label}: {cloudflareErrorMessage(issue.cause)}
+        </Text>
+      ))}
+
+      <View style={styles.segmentWrap}>
+        <SegmentedControl
+          onChange={setSegment}
+          segments={[
+            { id: 'r2', label: t('storage.segR2') },
+            { id: 'kv', label: t('storage.segKv') },
+            { id: 'd1', label: t('storage.segD1') },
+          ]}
+          selected={segment}
+          testIDPrefix="storage-segment"
+        />
+      </View>
+
+      <SearchField
+        accessibilityLabel={t('storage.searchA11y')}
+        onChange={setQuery}
+        placeholder={
+          segment === 'r2'
+            ? t('storage.searchR2')
+            : segment === 'kv'
+              ? t('storage.searchKv')
+              : t('storage.searchD1')
+        }
+        testID="storage-search"
+        value={query}
+      />
+
+      {segment === 'r2' ? (
+        <>
+          <View style={styles.tileRow}>
+            <MetricTile
+              Icon={HardDrive}
+              color={accent.orange}
+              label={t('storage.totalStored')}
+              sub={t('storage.last24h')}
+              value={r2Totals ? formatBytes(r2Totals.stored) : '—'}
+            />
+            <MetricTile
+              Icon={Archive}
+              color={accent.blue}
+              label={t('storage.totalObjects')}
+              sub={t('storage.last24h')}
+              value={r2Totals ? compactNumber(r2Totals.objects) : '—'}
+            />
+          </View>
+          <SectionLabel>
+            {t('storage.bucketsCount', { count: visibleBuckets.length })}
+          </SectionLabel>
+        </>
+      ) : segment === 'kv' ? (
+        <SectionLabel>
+          {t('storage.namespacesCount', { count: visibleKv.length })}
+        </SectionLabel>
+      ) : (
+        <SectionLabel>
+          {t('storage.databasesCount', { count: visibleD1.length })}
+        </SectionLabel>
+      )}
+    </>
+  );
+
   return (
     <SafeAreaView
       edges={['top']}
       style={[styles.safeArea, { backgroundColor: colors.bg }]}
     >
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={
-          <RefreshControl
-            onRefresh={refresh}
-            refreshing={refreshing}
-            tintColor={accent.orange}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.header}>
-          <View style={styles.headerCopy}>
-            <Text style={[styles.title, { color: colors.text }]}>
-              {t('storage.title')}
-            </Text>
-            <Text style={[styles.subtitle, { color: label(mode, 0.5) }]}>
-              {t('storage.subtitle')}
-            </Text>
-          </View>
-          <Pressable
-            accessibilityLabel={
-              segment === 'r2'
-                ? t('storage.createBucket')
-                : segment === 'kv'
-                  ? t('storage.createNamespace')
-                  : t('storage.createDatabase')
-            }
-            accessibilityRole="button"
-            hitSlop={6}
-            onPress={openCreator}
-            style={styles.addButton}
-            testID="storage-add"
-          >
-            <Plus color={foreground.onAccent} size={18} />
-          </Pressable>
-        </View>
-
-        {snapshot.issues.map((issue) => (
-          <Text
-            key={issue.connectionId + issue.label}
-            style={[styles.issue, { color: accent.yellow }]}
-          >
-            {issue.label}: {cloudflareErrorMessage(issue.cause)}
-          </Text>
-        ))}
-
-        <View style={styles.segmentWrap}>
-          <SegmentedControl
-            onChange={setSegment}
-            segments={[
-              { id: 'r2', label: t('storage.segR2') },
-              { id: 'kv', label: t('storage.segKv') },
-              { id: 'd1', label: t('storage.segD1') },
-            ]}
-            selected={segment}
-            testIDPrefix="storage-segment"
-          />
-        </View>
-
-        {segment === 'r2' ? (
-          <>
-            <View style={styles.tileRow}>
-              <MetricTile
-                Icon={HardDrive}
-                color={accent.orange}
-                label={t('storage.totalStored')}
-                sub={t('storage.last24h')}
-                value={r2Totals ? formatBytes(r2Totals.stored) : '—'}
-              />
-              <MetricTile
-                Icon={Archive}
-                color={accent.blue}
-                label={t('storage.totalObjects')}
-                sub={t('storage.last24h')}
-                value={r2Totals ? compactNumber(r2Totals.objects) : '—'}
-              />
-            </View>
-            <SectionLabel>
-              {t('storage.bucketsCount', { count: snapshot.buckets.length })}
-            </SectionLabel>
-            {snapshot.buckets.length === 0 ? (
-              <Text style={[styles.empty, { color: label(mode, 0.4) }]}>
-                {t('storage.noBuckets')}
-              </Text>
-            ) : (
-              <Card>
-                {snapshot.buckets.map((bucket, index) => {
-                  const bucketMetrics = metrics
-                    .get(bucket.accountId)
-                    ?.r2.get(bucket.name);
-                  const sub = [
-                    showAccountName ? bucket.accountName : null,
-                    bucket.location ? bucket.location.toUpperCase() : null,
-                    bucketMetrics
-                      ? t('storage.objectsCount', {
-                          count: bucketMetrics.objectCount,
-                        })
-                      : null,
-                    bucketMetrics
-                      ? formatBytes(bucketMetrics.payloadSize)
-                      : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ');
-                  return (
-                    <ListRow
-                      key={`${bucket.accountId}-${bucket.name}`}
-                      last={index === snapshot.buckets.length - 1}
-                      testID={`storage-bucket-${bucket.name}`}
-                      onPress={() =>
-                        router.push({
-                          pathname: '/(tabs)/(storage)/r2/[bucket]',
-                          params: {
-                            bucket: bucket.name,
-                            accountId: bucket.accountId,
-                            connectionId: bucket.connectionId,
-                            location: bucket.location,
-                          },
-                        })
-                      }
-                      left={
-                        <View style={styles.row}>
-                          <View
-                            style={[
-                              styles.iconBadge,
-                              { backgroundColor: tint(accent.orange, '22') },
-                            ]}
-                          >
-                            <HardDrive color={accent.orange} size={15} />
-                          </View>
-                          <View style={styles.copy}>
-                            <Text
-                              numberOfLines={1}
-                              style={[styles.name, { color: colors.text }]}
-                            >
-                              {bucket.name}
-                            </Text>
-                            {sub ? (
-                              <Text
-                                numberOfLines={1}
-                                style={[
-                                  styles.sub,
-                                  { color: label(mode, 0.4) },
-                                ]}
-                              >
-                                {sub}
-                              </Text>
-                            ) : null}
-                          </View>
-                        </View>
-                      }
-                    />
-                  );
-                })}
-              </Card>
-            )}
-          </>
-        ) : null}
-
-        {segment === 'kv' ? (
-          <>
-            <SectionLabel>
-              {t('storage.namespacesCount', {
-                count: snapshot.kvNamespaces.length,
-              })}
-            </SectionLabel>
-            {snapshot.kvNamespaces.length === 0 ? (
-              <Text style={[styles.empty, { color: label(mode, 0.4) }]}>
-                {t('storage.noNamespaces')}
-              </Text>
-            ) : (
-              <Card>
-                {snapshot.kvNamespaces.map((namespace, index) => {
-                  const kvMetrics = metrics
-                    .get(namespace.accountId)
-                    ?.kv.get(namespace.id);
-                  const sub = [
-                    showAccountName ? namespace.accountName : null,
-                    kvMetrics
-                      ? t('storage.keysCount', { count: kvMetrics.keyCount })
-                      : null,
-                    kvMetrics ? formatBytes(kvMetrics.byteCount) : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ');
-                  return (
-                    <ListRow
-                      key={`${namespace.accountId}-${namespace.id}`}
-                      last={index === snapshot.kvNamespaces.length - 1}
-                      onPress={() =>
-                        router.push({
-                          pathname: '/(tabs)/(storage)/kv/[namespace]',
-                          params: {
-                            namespace: namespace.id,
-                            accountId: namespace.accountId,
-                            connectionId: namespace.connectionId,
-                            accountName: namespace.accountName,
-                            title: namespace.title,
-                          },
-                        } as unknown as Href)
-                      }
-                      testID={`storage-kv-${namespace.id}`}
-                      right={
-                        kvMetrics ? (
-                          <Text
-                            style={[styles.ops, { color: label(mode, 0.4) }]}
-                          >
-                            {t('storage.reads', {
-                              value: compactNumber(kvMetrics.reads),
-                            })}{' '}
-                            {t('storage.writes', {
-                              value: compactNumber(kvMetrics.writes),
-                            })}
-                          </Text>
-                        ) : undefined
-                      }
-                      left={
-                        <View style={styles.row}>
-                          <View
-                            style={[
-                              styles.iconBadge,
-                              { backgroundColor: tint(accent.blue, '22') },
-                            ]}
-                          >
-                            <KeyRound color={accent.blue} size={15} />
-                          </View>
-                          <View style={styles.copy}>
-                            <Text
-                              numberOfLines={1}
-                              style={[styles.mono, { color: colors.text }]}
-                            >
-                              {namespace.title}
-                            </Text>
-                            {sub ? (
-                              <Text
-                                numberOfLines={1}
-                                style={[
-                                  styles.sub,
-                                  { color: label(mode, 0.4) },
-                                ]}
-                              >
-                                {sub}
-                              </Text>
-                            ) : null}
-                          </View>
-                        </View>
-                      }
-                    />
-                  );
-                })}
-              </Card>
-            )}
-          </>
-        ) : null}
-
-        {segment === 'd1' ? (
-          <>
-            <SectionLabel>
-              {t('storage.databasesCount', {
-                count: snapshot.d1Databases.length,
-              })}
-            </SectionLabel>
-            {snapshot.d1Databases.length === 0 ? (
-              <Text style={[styles.empty, { color: label(mode, 0.4) }]}>
-                {t('storage.noDatabases')}
-              </Text>
-            ) : (
-              <Card>
-                {snapshot.d1Databases.map((database, index) => {
-                  const d1Metrics = metrics
-                    .get(database.accountId)
-                    ?.d1.get(database.uuid);
-                  const sub = [
-                    showAccountName ? database.accountName : null,
-                    database.fileSize !== null
-                      ? formatBytes(database.fileSize)
-                      : null,
-                    database.numTables !== null
-                      ? t('storage.tablesCount', {
-                          count: database.numTables,
-                        })
-                      : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ');
-                  return (
-                    <ListRow
-                      key={`${database.accountId}-${database.uuid}`}
-                      last={index === snapshot.d1Databases.length - 1}
-                      onPress={() =>
-                        router.push({
-                          pathname: '/(tabs)/(storage)/d1/[database]',
-                          params: {
-                            database: database.uuid,
-                            accountId: database.accountId,
-                            connectionId: database.connectionId,
-                            accountName: database.accountName,
-                            name: database.name,
-                            ...(database.createdAt
-                              ? { createdAt: database.createdAt }
-                              : {}),
-                            ...(database.version
-                              ? { version: database.version }
-                              : {}),
-                          },
-                        } as unknown as Href)
-                      }
-                      testID={`storage-d1-${database.uuid}`}
-                      right={
-                        d1Metrics ? (
-                          <Text
-                            style={[styles.ops, { color: label(mode, 0.4) }]}
-                          >
-                            {t('storage.reads', {
-                              value: compactNumber(d1Metrics.readQueries),
-                            })}{' '}
-                            {t('storage.writes', {
-                              value: compactNumber(d1Metrics.writeQueries),
-                            })}
-                          </Text>
-                        ) : undefined
-                      }
-                      left={
-                        <View style={styles.row}>
-                          <View
-                            style={[
-                              styles.iconBadge,
-                              { backgroundColor: tint(accent.purple, '22') },
-                            ]}
-                          >
-                            <Database color={accent.purple} size={15} />
-                          </View>
-                          <View style={styles.copy}>
-                            <Text
-                              numberOfLines={1}
-                              style={[styles.name, { color: colors.text }]}
-                            >
-                              {database.name}
-                            </Text>
-                            {sub ? (
-                              <Text
-                                numberOfLines={1}
-                                style={[
-                                  styles.sub,
-                                  { color: label(mode, 0.4) },
-                                ]}
-                              >
-                                {sub}
-                              </Text>
-                            ) : null}
-                          </View>
-                        </View>
-                      }
-                    />
-                  );
-                })}
-              </Card>
-            )}
-          </>
-        ) : null}
-      </ScrollView>
+      <CollapsibleTitleContainer>
+        <CompactHeader scrollY={scrollY} title={t('storage.title')} />
+        <Animated.FlatList
+          data={items}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          ListHeaderComponent={header}
+          ListEmptyComponent={
+            <InlineEmpty>
+              {needle
+                ? t('common.noMatch', { query: query.trim() })
+                : t(
+                    segment === 'r2'
+                      ? 'storage.noBuckets'
+                      : segment === 'kv'
+                        ? 'storage.noNamespaces'
+                        : 'storage.noDatabases',
+                  )}
+            </InlineEmpty>
+          }
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          entering={FadeInDown.duration(260)}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: bottomInset },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              onRefresh={refresh}
+              refreshing={refreshing}
+              tintColor={accent.orange}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      </CollapsibleTitleContainer>
 
       <Modal
         animationType="slide"
@@ -839,9 +1080,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 32,
   },
-  content: {
-    paddingBottom: 32,
-  },
+  content: {},
   copy: {
     flex: 1,
     minWidth: 0,
@@ -850,12 +1089,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 12,
     paddingHorizontal: 16,
-  },
-  empty: {
-    fontSize: 15,
-    marginTop: 12,
-    paddingHorizontal: 32,
-    textAlign: 'center',
   },
   fieldError: {
     color: accent.red,
@@ -904,11 +1137,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 8,
     paddingHorizontal: 16,
-  },
-  loading: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
   },
   mono: {
     fontFamily: 'Menlo',

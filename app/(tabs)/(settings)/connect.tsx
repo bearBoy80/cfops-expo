@@ -9,25 +9,13 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthRequest } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { Cloud, ChevronLeft, KeyRound, ShieldCheck } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { AuthTextInput } from '@/src/components/AuthTextInput';
-import {
-  addConnection,
-  addOauthConnection,
-} from '@/src/cloudflare/connections';
-import { invalidateZonesSnapshot } from '@/src/cloudflare/resources';
-import {
-  discovery,
-  exchangeAuthorizationCode,
-  fetchOauthIdentity,
-  getOauthConfig,
-  redirectUri,
-} from '@/src/cloudflare/oauth';
-import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useConnectAccount } from '@/src/cloudflare/useConnectAccount';
+import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { accent, foreground, hairline, label, tint } from '@/src/theme/tokens';
 
@@ -37,65 +25,30 @@ export default function ConnectAccountScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { mode, colors } = useTheme();
+  const bottomInset = useTabBarInset();
   const [token, setToken] = useState('');
-  const [busy, setBusy] = useState<'oauth' | 'token' | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const oauthConfig = getOauthConfig();
-  const [request, , promptAsync] = useAuthRequest(
-    {
-      clientId: oauthConfig?.clientId ?? 'unconfigured',
-      scopes: oauthConfig?.scopes ?? [],
-      redirectUri,
-    },
-    discovery,
-  );
-
-  const canSubmitToken = token.trim().length > 0 && !busy;
-  const canStartOauth = Boolean(oauthConfig && request) && !busy;
-
-  const reportError = (cause: unknown) => {
-    setError(cloudflareErrorMessage(cause));
-  };
-
-  const connectWithOauth = async () => {
-    if (!canStartOauth || !request) {
-      return;
-    }
-    setBusy('oauth');
-    setError(null);
-    try {
-      const result = await promptAsync();
-      if (result.type === 'cancel' || result.type === 'dismiss') {
-        setBusy(null);
-        return;
-      }
-      const tokens = await exchangeAuthorizationCode(request, result);
-      const identity = await fetchOauthIdentity(tokens.accessToken);
-      await addOauthConnection(tokens, identity);
-      invalidateZonesSnapshot();
+  const {
+    busy,
+    canStartOauth,
+    clearError,
+    connectWithOauth,
+    connectWithToken,
+    error,
+    oauthConfigured,
+  } = useConnectAccount(() => {
+    // The OAuth sheet can outlive this screen, so the history may be gone by
+    // the time the credential lands. Leaving the user on a screen that has
+    // already done its job reads as a silent failure, so fall back to an
+    // explicit destination rather than doing nothing.
+    if (router.canGoBack()) {
       router.back();
-    } catch (cause) {
-      reportError(cause);
-      setBusy(null);
+    } else {
+      router.replace('/(tabs)/(settings)');
     }
-  };
+  });
 
-  const connectWithToken = async () => {
-    if (!canSubmitToken) {
-      return;
-    }
-    setBusy('token');
-    setError(null);
-    try {
-      await addConnection(token);
-      invalidateZonesSnapshot();
-      router.back();
-    } catch (cause) {
-      reportError(cause);
-      setBusy(null);
-    }
-  };
+  const canSubmitToken = token.trim().length > 0 && busy === null;
+  const submitToken = () => void connectWithToken(token);
 
   return (
     <SafeAreaView
@@ -103,7 +56,7 @@ export default function ConnectAccountScreen() {
       style={[styles.safeArea, { backgroundColor: colors.bg }]}
     >
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomInset }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -134,7 +87,7 @@ export default function ConnectAccountScreen() {
             accessibilityState={{ disabled: !canStartOauth }}
             activeOpacity={0.8}
             disabled={!canStartOauth}
-            onPress={connectWithOauth}
+            onPress={() => void connectWithOauth()}
             style={[
               styles.primaryButton,
               {
@@ -159,7 +112,7 @@ export default function ConnectAccountScreen() {
               </>
             )}
           </TouchableOpacity>
-          {!oauthConfig ? (
+          {!oauthConfigured ? (
             <Text style={[styles.hint, { color: label(mode, 0.45) }]}>
               {t('connect.oauthNotConfigured')}
             </Text>
@@ -188,10 +141,10 @@ export default function ConnectAccountScreen() {
             onChangeText={(value) => {
               setToken(value);
               if (error) {
-                setError(null);
+                clearError();
               }
             }}
-            onSubmitEditing={connectWithToken}
+            onSubmitEditing={submitToken}
             placeholder={t('connect.tokenPlaceholder')}
             returnKeyType="go"
             secureTextEntry
@@ -211,7 +164,7 @@ export default function ConnectAccountScreen() {
             accessibilityState={{ disabled: !canSubmitToken }}
             activeOpacity={0.8}
             disabled={!canSubmitToken}
-            onPress={connectWithToken}
+            onPress={submitToken}
             style={[
               styles.secondaryButton,
               {
@@ -261,9 +214,7 @@ const styles = StyleSheet.create({
     color: accent.orange,
     fontSize: 17,
   },
-  content: {
-    paddingBottom: 24,
-  },
+  content: {},
   divider: {
     alignItems: 'center',
     flexDirection: 'row',

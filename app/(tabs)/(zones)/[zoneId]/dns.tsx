@@ -35,6 +35,7 @@ import {
   SectionLabel,
   ToggleRow,
   useToast,
+  InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -80,33 +81,22 @@ export default function ZoneDns() {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const resolved = await getBearerForConnection(params.connectionId);
-    setBearer(resolved);
-    return listDnsRecords(resolved, params.zoneId);
+    setError(null);
+    try {
+      const resolved = await getBearerForConnection(params.connectionId);
+      setBearer(resolved);
+      setRecords(await listDnsRecords(resolved, params.zoneId));
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    }
   }, [params.connectionId, params.zoneId]);
 
   useEffect(() => {
-    let active = true;
-    void load()
-      .then((result) => {
-        if (active) {
-          setRecords(result);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      });
-    return () => {
-      active = false;
-    };
+    void load();
   }, [load]);
 
   const refresh = () => {
-    void load()
-      .then(setRecords)
-      .catch(() => {});
+    void load();
   };
 
   const openEditor = (record: CfDnsRecord | null) => {
@@ -214,6 +204,7 @@ export default function ZoneDns() {
       backLabel={params.name ?? t('zone.fallbackTitle')}
       error={error}
       loading={!records}
+      onRefresh={load}
       headerRight={
         <Pressable
           accessibilityLabel={t('dns.addRecord')}
@@ -291,9 +282,9 @@ export default function ZoneDns() {
           </Card>
         </>
       ) : records ? (
-        <Text style={[styles.empty, { color: label(mode, 0.4) }]}>
+        <InlineEmpty>
           {t('dns.empty')}
-        </Text>
+        </InlineEmpty>
       ) : null}
 
       <Modal
@@ -511,11 +502,6 @@ const styles = StyleSheet.create({
     color: accent.red,
     fontSize: 17,
     fontWeight: '400',
-  },
-  empty: {
-    fontSize: 15,
-    marginTop: 24,
-    textAlign: 'center',
   },
   fieldError: {
     color: accent.red,

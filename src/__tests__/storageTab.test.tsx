@@ -197,6 +197,23 @@ test('shows D1 databases with size and table counts', async () => {
   });
 });
 
+test('filters the current segment with the search field', async () => {
+  wrap();
+  await waitFor(() => expect(screen.getByText('assets')).toBeTruthy());
+
+  fireEvent.changeText(screen.getByTestId('storage-search'), 'zzz');
+  expect(screen.queryByText('assets')).toBeNull();
+  expect(screen.getByText('No matches for “zzz”.')).toBeTruthy();
+
+  fireEvent.changeText(screen.getByTestId('storage-search'), 'sess');
+  fireEvent.press(screen.getByTestId('storage-segment-kv'));
+  expect(screen.getByText('SESSIONS')).toBeTruthy();
+
+  fireEvent.changeText(screen.getByTestId('storage-search'), 'prod');
+  fireEvent.press(screen.getByTestId('storage-segment-d1'));
+  expect(screen.getByText('prod-db')).toBeTruthy();
+});
+
 test('validates the bucket name before creating', async () => {
   wrap();
   await waitFor(() => expect(screen.getByTestId('storage-add')).toBeTruthy());

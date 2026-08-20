@@ -4,6 +4,9 @@ import {
   fetchStorageMetrics,
   fetchWorkerMetrics,
   invalidateAnalyticsSnapshot,
+  invalidateStorageMetrics,
+  invalidateWorkerMetrics,
+  invalidateZonesRangeSnapshot,
   type AnalyticsSnapshot,
 } from '../analytics';
 import type { ZonesSnapshot } from '../resources';
@@ -84,6 +87,9 @@ const graphqlPayload = {
 beforeEach(() => {
   jest.clearAllMocks();
   invalidateAnalyticsSnapshot();
+  invalidateZonesRangeSnapshot();
+  invalidateWorkerMetrics();
+  invalidateStorageMetrics();
   listConnections.mockResolvedValue([
     { id: 'tok-1', label: 'Ops token', authType: 'token', accounts: [] },
   ]);
@@ -210,6 +216,47 @@ test('overlays Web Analytics visits grouped by requestHost', async () => {
   expect(snapshot.zones[0].uniques).toBe(90);
 });
 
+test('rolls subdomain Web Analytics hosts into the apex zone', async () => {
+  setFetch(
+    jest.fn().mockImplementation(async (_url: string, init?: { body?: string }) => {
+      const query = queryOf(init);
+      if (query.includes('rumPageloadEventsAdaptiveGroups')) {
+        return {
+          json: () =>
+            Promise.resolve({
+              data: {
+                viewer: {
+                  accounts: [
+                    {
+                      rumPageloadEventsAdaptiveGroups: [
+                        {
+                          count: 120,
+                          sum: { visits: 118 },
+                          dimensions: { requestHost: 'figma.acme.com' },
+                        },
+                        {
+                          count: 6,
+                          sum: { visits: 6 },
+                          dimensions: { requestHost: 'acme.com' },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            }),
+        };
+      }
+      return { json: () => Promise.resolve(graphqlPayload) };
+    }),
+  );
+
+  const snapshot = await fetchAnalyticsSnapshot(zonesSnapshot);
+
+  expect(snapshot.zones[0].visits).toBe(124);
+  expect(snapshot.zones[0].pageViews).toBe(126);
+});
+
 test('keeps HTTP uniques internal and leaves visits empty without RUM', async () => {
   setFetch(
     jest.fn().mockResolvedValue({
@@ -324,6 +371,37 @@ test('fetchWorkerMetrics sums invocations per script', async () => {
   });
 });
 
+test('worker metrics are cached per account until invalidated', async () => {
+  const fetchMock = setFetch(
+    jest.fn().mockResolvedValue({
+      json: () =>
+        Promise.resolve({
+          data: { viewer: { accounts: [{ workersInvocationsAdaptive: [] }] } },
+        }),
+    }),
+  );
+
+  await fetchWorkerMetrics('bearer-1', 'acc-1');
+  await fetchWorkerMetrics('bearer-1', 'acc-1');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+
+  // A different account must not read the first account's entry.
+  await fetchWorkerMetrics('bearer-1', 'acc-2');
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+
+  invalidateWorkerMetrics('acc-1');
+  await fetchWorkerMetrics('bearer-1', 'acc-1');
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+
+  // The untouched account is still served from cache.
+  await fetchWorkerMetrics('bearer-1', 'acc-2');
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+
+  invalidateWorkerMetrics();
+  await fetchWorkerMetrics('bearer-1', 'acc-2');
+  expect(fetchMock).toHaveBeenCalledTimes(4);
+});
+
 test('fetchStorageMetrics collects R2, KV and D1 datasets independently', async () => {
   const respond = (body: unknown) => ({
     json: () => Promise.resolve(body),
@@ -410,4 +488,24 @@ test('fetchStorageMetrics collects R2, KV and D1 datasets independently', async 
     writes: 5,
   });
   expect(metrics.d1.size).toBe(0);
+});
+
+test('storage metrics are cached per account until invalidated', async () => {
+  const fetchMock = setFetch(
+    jest.fn().mockResolvedValue({
+      json: () => Promise.resolve({ data: { viewer: { accounts: [{}] } } }),
+    }),
+  );
+
+  await fetchStorageMetrics('bearer-1', 'acc-1');
+  // One fetch per dataset; the exact count is an implementation detail.
+  const perAccount = fetchMock.mock.calls.length;
+  expect(perAccount).toBeGreaterThan(0);
+
+  await fetchStorageMetrics('bearer-1', 'acc-1');
+  expect(fetchMock).toHaveBeenCalledTimes(perAccount);
+
+  invalidateStorageMetrics('acc-1');
+  await fetchStorageMetrics('bearer-1', 'acc-1');
+  expect(fetchMock).toHaveBeenCalledTimes(perAccount * 2);
 });

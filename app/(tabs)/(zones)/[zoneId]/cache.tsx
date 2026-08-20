@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { CheckCircle, RefreshCw } from 'lucide-react-native';
@@ -31,32 +31,26 @@ export default function ZoneCache() {
   const [purged, setPurged] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    void getBearerForConnection(params.connectionId)
-      .then(async (resolved) => {
-        if (active) {
-          setBearer(resolved);
-        }
-        // Traffic stats are optional; the purge action works without them.
-        const result = await fetchZoneTraffic(resolved, params.zoneId).catch(
-          () => null,
-        );
-        if (active) {
-          setTraffic(result);
-          setLoading(false);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-          setLoading(false);
-        }
-      });
-    return () => {
-      active = false;
-    };
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const resolved = await getBearerForConnection(params.connectionId);
+      setBearer(resolved);
+      // Traffic stats are optional; the purge action works without them.
+      const result = await fetchZoneTraffic(resolved, params.zoneId).catch(
+        () => null,
+      );
+      setTraffic(result);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    } finally {
+      setLoading(false);
+    }
   }, [params.zoneId, params.connectionId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const confirmPurge = () => {
     Alert.alert(t('zone.purgeCache'), t('zone.purgeConfirm'), [
@@ -114,6 +108,7 @@ export default function ZoneCache() {
       backLabel={params.name ?? t('zone.fallbackTitle')}
       error={error}
       loading={loading}
+      onRefresh={load}
       subtitle={
         params.name ? `${params.name} · ${t('cache.sub30d')}` : t('cache.sub30d')
       }

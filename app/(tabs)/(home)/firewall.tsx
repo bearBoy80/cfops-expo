@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -18,6 +18,7 @@ import {
   MetricTile,
   Pill,
   type Status,
+  InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -50,29 +51,21 @@ export default function HomeFirewall() {
   const [zones, setZones] = useState<ZonesSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    void fetchZonesSnapshot()
-      .then((nextZones) => {
-        if (active) {
-          setZones(nextZones);
-        }
-        return fetchAnalyticsSnapshot(nextZones);
-      })
-      .then((next) => {
-        if (active) {
-          setSnapshot(next);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      });
-    return () => {
-      active = false;
-    };
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const nextZones = await fetchZonesSnapshot();
+      setZones(nextZones);
+      const next = await fetchAnalyticsSnapshot(nextZones);
+      setSnapshot(next);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    }
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const accountId = params.accountId || undefined;
   const aggregate = useMemo(
@@ -96,6 +89,7 @@ export default function HomeFirewall() {
       backLabel={t('tabs.home')}
       error={error}
       loading={!snapshot && !error}
+      onRefresh={load}
       subtitle={t('home.firewallSubtitle')}
       title={t('home.quickFirewall')}
     >
@@ -170,21 +164,15 @@ export default function HomeFirewall() {
           ))}
         </Card>
       ) : snapshot ? (
-        <Text style={[styles.empty, { color: label(mode, 0.4) }]}>
+        <InlineEmpty>
           {t('firewall.noEvents')}
-        </Text>
+        </InlineEmpty>
       ) : null}
     </ZoneSubpage>
   );
 }
 
 const styles = StyleSheet.create({
-  empty: {
-    fontSize: 15,
-    marginTop: 12,
-    paddingHorizontal: 32,
-    textAlign: 'center',
-  },
   eventCopy: {
     flex: 1,
     minWidth: 0,

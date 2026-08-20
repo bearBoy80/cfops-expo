@@ -103,6 +103,23 @@ jest.mock('lucide-react-native', () => ({
   User: () => null,
 }));
 
+// The real module builds a redirect URI at import time, which needs an
+// expo-constants manifest. The connect flows themselves are covered in
+// src/__tests__/connectAccount.test.tsx; here OAuth stays unconfigured so the
+// onboarding flow continues through "Skip for now".
+jest.mock('../../cloudflare/oauth', () => ({
+  discovery: {},
+  appCallbackUrl: 'cfops://oauth/callback',
+  authorize: jest.fn(),
+  getOauthConfig: () => null,
+  exchangeAuthorizationCode: jest.fn(),
+  fetchOauthIdentity: jest.fn(),
+}));
+
+jest.mock('expo-auth-session', () => ({
+  useAuthRequest: () => [null, null, jest.fn()],
+}));
+
 function AuthStatusProbe() {
   const { status } = useAuth();
   return <Text testID="auth-status">{status}</Text>;
@@ -196,11 +213,12 @@ test('runs the Figma onboarding flow and persists completion', async () => {
   expect(
     await screen.findByText('Bind Cloudflare accounts'),
   ).toBeTruthy();
-  fireEvent.press(screen.getByText('Authorize with Cloudflare'));
   expect(
-    await screen.findByText(
-      'Cloudflare connections arrive in the next milestone. Skip for now to continue.',
-    ),
+    screen.getByLabelText('Authorize with Cloudflare').props.accessibilityState
+      .disabled,
+  ).toBe(true);
+  expect(
+    screen.getByText(/Register an OAuth client in the Cloudflare dashboard/),
   ).toBeTruthy();
 
   fireEvent.press(screen.getByText('Skip for now'));

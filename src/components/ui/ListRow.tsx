@@ -9,17 +9,27 @@ interface Props {
   chevron?: boolean;
   last?: boolean;
   onPress?: () => void;
+  /** Long-press hook, typically presenting a context action menu. */
+  onLongPress?: () => void;
+  /** Set when the row discloses content, so screen readers announce it. */
+  expanded?: boolean;
   testID?: string;
 }
 
-export function ListRow({ left, right, chevron = true, last = false, onPress, testID }: Props) {
+export function ListRow({ left, right, chevron = true, last = false, onPress, onLongPress, expanded, testID }: Props) {
   const { mode } = useTheme();
+  const interactive = Boolean(onPress ?? onLongPress);
   return (
     <Pressable
-      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityRole={interactive ? 'button' : undefined}
+      accessibilityState={expanded === undefined ? undefined : { expanded }}
       onPress={onPress}
-      disabled={!onPress}
-      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+      onLongPress={onLongPress}
+      disabled={!interactive}
+      // iOS-style row highlight instead of a bare opacity fade.
+      style={({ pressed }) => ({
+        backgroundColor: pressed && interactive ? label(mode, 0.07) : 'transparent',
+      })}
       testID={testID}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 16, minHeight: 44, paddingVertical: 11 }}>

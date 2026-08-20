@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -18,14 +17,23 @@ import {
   type ZonesSnapshot,
 } from '@/src/cloudflare/resources';
 import {
+  useToast,
   AccountChip,
   Card,
   EmptyState,
   ListRow,
   Pill,
+  ScopeBanner,
   zonePillStatus,
+  ScreenSkeleton,
 } from '@/src/components/ui';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { CollapsibleTitleContainer, CompactHeader, useCollapsibleTitle } from '@/src/components/CollapsibleTitle';
+import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { useAccountScope } from '@/src/state/accountScope';
+import { haptics } from '@/src/utils/haptics';
+import { showResourceMenu } from '@/src/utils/resourceMenu';
 import { accent, label } from '@/src/theme/tokens';
 
 const chipColors = [accent.orange, accent.blue, accent.purple, accent.green];
@@ -34,6 +42,10 @@ export default function Zones() {
   const router = useRouter();
   const { t } = useTranslation();
   const { mode, colors } = useTheme();
+  const bottomInset = useTabBarInset();
+  const { scrollY, onScroll } = useCollapsibleTitle();
+  const { showToast } = useToast();
+  const { scope } = useAccountScope();
   const [snapshot, setSnapshot] = useState<ZonesSnapshot | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
@@ -53,6 +65,7 @@ export default function Zones() {
   );
 
   const refresh = () => {
+    haptics.tap();
     setRefreshing(true);
     void load(true).finally(() => setRefreshing(false));
   };
@@ -65,20 +78,28 @@ export default function Zones() {
     return map;
   }, [snapshot]);
 
+  const scopedAccount = useMemo(
+    () => snapshot?.accounts.find((account) => account.id === scope) ?? null,
+    [snapshot, scope],
+  );
+
   const visible = useMemo(() => {
     if (!snapshot) {
       return [];
     }
+    const scoped = scope
+      ? snapshot.zones.filter((zone) => zone.accountId === scope)
+      : snapshot.zones;
     const needle = query.trim().toLowerCase();
     if (!needle) {
-      return snapshot.zones;
+      return scoped;
     }
-    return snapshot.zones.filter(
+    return scoped.filter(
       (zone) =>
         zone.name.toLowerCase().includes(needle) ||
         zone.accountName.toLowerCase().includes(needle),
     );
-  }, [snapshot, query]);
+  }, [snapshot, query, scope]);
 
   const openZone = (zone: ZoneListItem) => {
     router.push({
@@ -100,9 +121,7 @@ export default function Zones() {
         <Text style={[styles.title, { color: colors.text }]}>
           {t('zones.title')}
         </Text>
-        <View style={styles.loading}>
-          <ActivityIndicator color={accent.orange} />
-        </View>
+        <ScreenSkeleton testID="screen-skeleton" />
       </SafeAreaView>
     );
   }
@@ -144,8 +163,13 @@ export default function Zones() {
       edges={['top']}
       style={[styles.safeArea, { backgroundColor: colors.bg }]}
     >
-      <ScrollView
-        contentContainerStyle={styles.content}
+      <CollapsibleTitleContainer>
+      <CompactHeader scrollY={scrollY} title={t('zones.title')} />
+      <Animated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        entering={FadeInDown.duration(260)}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomInset }]}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
@@ -160,9 +184,15 @@ export default function Zones() {
           {t('zones.title')}
         </Text>
         <Text style={[styles.subtitle, { color: label(mode, 0.5) }]}>
-          {t('common.zoneCount', { count: snapshot.zones.length })} ·{' '}
-          {t('common.accountCount', { count: snapshot.accounts.length })}
+          {scopedAccount
+            ? t('common.zoneCount', {
+                count: snapshot.zones.filter(
+                  (zone) => zone.accountId === scope,
+                ).length,
+              })
+            : `${t('common.zoneCount', { count: snapshot.zones.length })} · ${t('common.accountCount', { count: snapshot.accounts.length })}`}
         </Text>
+        <ScopeBanner name={scopedAccount?.name ?? null} />
 
         <View
           style={[styles.searchBox, { backgroundColor: colors.searchBg }]}
@@ -193,6 +223,16 @@ export default function Zones() {
                 key={zone.id}
                 last={index === visible.length - 1}
                 onPress={() => openZone(zone)}
+                onLongPress={() =>
+                  showResourceMenu({
+                    title: zone.name,
+                    copyLabel: t('common.copyId'),
+                    copyValue: zone.id,
+                    dashboardPath: `${zone.accountId}/${zone.name}`,
+                    t,
+                    onCopied: () => showToast(t('common.copied')),
+                  })
+                }
                 left={
                   <View style={styles.zoneRow}>
                     <AccountChip
@@ -224,20 +264,14 @@ export default function Zones() {
             ))}
           </Card>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
+      </CollapsibleTitleContainer>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    paddingBottom: 32,
-  },
-  loading: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-  },
+  content: {},
   noResults: {
     fontSize: 15,
     marginTop: 12,

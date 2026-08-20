@@ -1,6 +1,14 @@
 import * as SecureStore from 'expo-secure-store';
-import { listAccounts, verifyToken, type CfAccountRef } from './api';
+import {
+  listAccounts,
+  listZones,
+  verifyToken,
+  type CfAccountRef,
+} from './api';
 import type { OauthIdentity, OauthTokens } from './oauth';
+
+/** Placeholder labels we replace once a real account name is discovered. */
+const PLACEHOLDER_LABELS = new Set(['API Token', 'Cloudflare OAuth']);
 
 const CONNECTIONS_KEY = 'cf-connections-v1';
 
@@ -53,9 +61,30 @@ function parseConnections(stored: string | null): CloudflareConnection[] {
     }));
 }
 
+/**
+ * The connection list is read on every snapshot and bearer lookup, and each
+ * SecureStore read is a native keychain round trip. All writes go through
+ * saveConnections, so a plain memory cache stays correct for the process
+ * lifetime. Only credential metadata lives here; tokens stay in SecureStore.
+ */
+let connectionsCache: CloudflareConnection[] | null = null;
+
 export async function listConnections(): Promise<CloudflareConnection[]> {
+  if (connectionsCache && connectionsCache.length > 0) {
+    return connectionsCache;
+  }
   const stored = await SecureStore.getItemAsync(CONNECTIONS_KEY);
-  return parseConnections(stored);
+  const parsed = parseConnections(stored);
+  // Never pin an empty read: keychain reads can transiently return nothing
+  // (app prewarming, lock-state races), and caching that would make the app
+  // "forget" its connections until the next launch.
+  connectionsCache = parsed.length > 0 ? parsed : null;
+  return parsed;
+}
+
+/** Drops the in-memory connection list. Test helper. */
+export function resetConnectionsCache(): void {
+  connectionsCache = null;
 }
 
 async function saveConnections(
@@ -65,6 +94,7 @@ async function saveConnections(
     CONNECTIONS_KEY,
     JSON.stringify(connections),
   );
+  connectionsCache = connections;
 }
 
 async function upsertConnection(
@@ -78,6 +108,67 @@ async function upsertConnection(
 }
 
 /**
+ * Resolves the accounts a credential can manage. Prefers the `/accounts`
+ * endpoint, but zone-scoped API tokens can't read it — for those we derive the
+ * owning account(s) from the token's zones, which always carry `account`.
+ */
+export async function discoverAccounts(
+  token: string,
+): Promise<CfAccountRef[]> {
+  let accounts: CfAccountRef[] = [];
+  try {
+    accounts = await listAccounts(token);
+  } catch {
+    accounts = [];
+  }
+  if (accounts.length > 0) {
+    return accounts;
+  }
+
+  try {
+    const zones = await listZones(token);
+    const byId = new Map<string, string>();
+    for (const zone of zones) {
+      if (zone.accountId) {
+        byId.set(zone.accountId, zone.accountName || zone.accountId);
+      }
+    }
+    return [...byId.entries()].map(([id, name]) => ({ id, name }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Persists a freshly discovered account list onto an existing connection and
+ * upgrades a placeholder label to the real account name. Used to heal
+ * credentials stored before account discovery could see their zones.
+ */
+export async function setConnectionAccounts(
+  connectionId: string,
+  accounts: CfAccountRef[],
+): Promise<CloudflareConnection | null> {
+  const existing = await listConnections();
+  const target = existing.find((item) => item.id === connectionId);
+  if (!target) {
+    return null;
+  }
+  const updated: CloudflareConnection = {
+    ...target,
+    accounts,
+    label:
+      target.label && !PLACEHOLDER_LABELS.has(target.label)
+        ? target.label
+        : accounts[0]?.name ?? target.label,
+  };
+  await saveConnections([
+    ...existing.filter((item) => item.id !== connectionId),
+    updated,
+  ]);
+  return updated;
+}
+
+/**
  * Verifies the API token against Cloudflare, discovers the accounts it can
  * see, and persists the credential. Re-adding the same token replaces the
  * existing entry instead of duplicating it.
@@ -88,7 +179,7 @@ export async function addConnection(
 ): Promise<CloudflareConnection> {
   const trimmed = token.trim();
   const verification = await verifyToken(trimmed);
-  const accounts = await listAccounts(trimmed);
+  const accounts = await discoverAccounts(trimmed);
 
   const connection: CloudflareConnection = {
     id: verification.id,
@@ -114,7 +205,7 @@ export async function addOauthConnection(
   tokens: OauthTokens,
   identity: OauthIdentity,
 ): Promise<CloudflareConnection> {
-  const accounts = await listAccounts(tokens.accessToken);
+  const accounts = await discoverAccounts(tokens.accessToken);
 
   const connection: CloudflareConnection = {
     id: `oauth-${identity.sub}`,

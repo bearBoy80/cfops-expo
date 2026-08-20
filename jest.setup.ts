@@ -1,3 +1,22 @@
+// Reanimated components (Skeleton, Toast, action menu) render as plain views
+// in tests; the official mock avoids loading the worklets native module.
+jest.mock('react-native-reanimated', () =>
+  require('react-native-reanimated/mock'),
+);
+
+// Keep the real safe-area module (nativewind's interop wraps SafeAreaView),
+// but resolve insets to zero so the hook does not require a native provider.
+jest.mock('react-native-safe-area-context', () => {
+  const actual = jest.requireActual('react-native-safe-area-context');
+  return {
+    ...actual,
+    // The real provider defers children until it measures a layout frame,
+    // which never fires under the test renderer; render them immediately.
+    SafeAreaProvider: ({ children }: { children: unknown }) => children,
+    useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+  };
+});
+
 // Tests always run with a fixed English locale so copy assertions are stable.
 // This only registers the mock factory; the module is instantiated lazily
 // inside each test file, so files can still override it with their own mock.

@@ -12,12 +12,19 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Archive, ArrowDownToLine, ArrowUpFromLine, HardDrive } from 'lucide-react-native';
+import {
+  Archive,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Check,
+  HardDrive,
+} from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import {
   addR2CustomDomain,
   deleteR2Bucket,
   deleteR2CustomDomain,
+  deleteR2Objects,
   getR2ManagedDomain,
   listR2CustomDomains,
   listR2Objects,
@@ -29,6 +36,7 @@ import {
 import { invalidateStorageSnapshot } from '@/src/cloudflare/accountResources';
 import {
   fetchStorageMetrics,
+  invalidateStorageMetrics,
   type R2BucketMetrics,
 } from '@/src/cloudflare/analytics';
 import {
@@ -46,15 +54,32 @@ import {
   ToggleRow,
   useToast,
   type Status,
+  InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { accent, foreground, label } from '@/src/theme/tokens';
+import { haptics } from '@/src/utils/haptics';
 import {
   compactNumber,
   formatBytes,
   relativeTime,
 } from '@/src/utils/format';
+
+/**
+ * R2 keys are path-like, and every object under one prefix shares a long head.
+ * Tail-truncating the whole key hides the filename — the only part that tells
+ * them apart — so the name leads and the prefix drops to the meta line.
+ */
+function objectName(key: string): string {
+  const cut = key.lastIndexOf('/');
+  return cut === -1 ? key : (key.slice(cut + 1) || key);
+}
+
+function objectPrefix(key: string): string {
+  const cut = key.lastIndexOf('/');
+  return cut === -1 ? '' : key.slice(0, cut);
+}
 
 const HOSTNAME_PATTERN =
   /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
@@ -87,6 +112,9 @@ export default function R2BucketDetail() {
   }>();
   const [bearer, setBearer] = useState<string | null>(null);
   const [objects, setObjects] = useState<CfR2Object[] | null>(null);
+  /** Multi-select mode. Outside it the list is plain and rows swipe to delete. */
+  const [editing, setEditing] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
   const [metrics, setMetrics] = useState<R2BucketMetrics | null>(null);
   const [managed, setManaged] = useState<CfR2ManagedDomain | null>(null);
   const [domains, setDomains] = useState<CfR2CustomDomain[] | null>(null);
@@ -237,6 +265,115 @@ export default function R2BucketDetail() {
     });
   };
 
+  const toggleObject = (key: string) => {
+    haptics.selection();
+    setSelected((current) =>
+      current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key],
+    );
+  };
+
+  const allSelected =
+    !!objects && objects.length > 0 && selected.length === objects.length;
+  const deleteDisabled = busy || selected.length === 0;
+
+  const toggleEditing = () => {
+    haptics.selection();
+    setEditing((current) => {
+      if (current) {
+        // Leaving the mode drops the selection, so reopening it starts clean.
+        setSelected([]);
+      }
+      return !current;
+    });
+  };
+
+  const runDelete = (keys: string[]) => {
+    if (!bearer) {
+      return;
+    }
+    setBusy(true);
+    void deleteR2Objects(bearer, params.accountId, params.bucket, keys)
+      .then((outcome) => {
+        // Only clear what actually went away, so a retry keeps the failures
+        // selected instead of silently dropping them.
+        setSelected((current) =>
+          current.filter((key) => !outcome.deleted.includes(key)),
+        );
+        invalidateStorageMetrics(params.accountId);
+        if (outcome.failed.length === 0) {
+          showToast(
+            t('storage.objectsDeleted', { count: outcome.deleted.length }),
+          );
+        } else {
+          showToast(
+            t('storage.objectsDeletedPartial', {
+              count: outcome.deleted.length,
+              failed: outcome.failed.length,
+            }),
+            'error',
+          );
+        }
+        return load();
+      })
+      .catch((cause) => {
+        showToast(cloudflareErrorMessage(cause), 'error');
+      })
+      .finally(() => setBusy(false));
+  };
+
+  /**
+   * Row menu behind the chevron: the two things you can do with one object.
+   * Matching the version list, the destructive item runs straight away — the
+   * sheet names the object and offers Cancel, so it is the confirmation.
+   */
+  const openObjectMenu = (key: string) => {
+    if (!bearer || busy) {
+      return;
+    }
+    showActionMenu({
+      title: objectName(key),
+      message: t('storage.deleteObjectConfirm', { name: key }),
+      cancelLabel: t('common.cancel'),
+      actions: [
+        {
+          label: t('storage.deleteObjects'),
+          destructive: true,
+          onPress: () => runDelete([key]),
+        },
+        {
+          label: t('storage.select'),
+          // Starts the selection from the object that was tapped.
+          onPress: () => {
+            setEditing(true);
+            setSelected([key]);
+          },
+        },
+      ],
+    });
+  };
+
+  /** Confirmation for the toolbar, where a whole selection is at stake. */
+  const confirmDeleteSelection = () => {
+    if (!bearer || busy || selected.length === 0) {
+      return;
+    }
+    const keys = selected;
+    showActionMenu({
+      title: t('storage.deleteSelected', { count: keys.length }),
+      message: t('storage.deleteObjectsConfirm', { count: keys.length }),
+      cancelLabel: t('common.cancel'),
+      actions: [
+        {
+          label: t('storage.deleteObjects'),
+          destructive: true,
+          onPress: () => runDelete(keys),
+        },
+      ],
+    });
+  };
+
   const confirmDelete = () => {
     if (!bearer || busy) {
       return;
@@ -254,6 +391,7 @@ export default function R2BucketDetail() {
             void deleteR2Bucket(bearer, params.accountId, params.bucket)
               .then(() => {
                 invalidateStorageSnapshot();
+                invalidateStorageMetrics(params.accountId);
                 showToast(t('storage.bucketDeleted'));
                 router.back();
               })
@@ -271,7 +409,87 @@ export default function R2BucketDetail() {
     <ZoneSubpage
       backLabel={t('storage.title')}
       error={error}
+      footer={
+        /*
+         * Present for the whole of selection mode, with the destructive action
+         * dimmed until something is picked. Hiding the bar on an empty
+         * selection stranded the user in a screen of empty checkboxes with no
+         * visible state and no way out but the header.
+         */
+        editing ? (
+          <View style={styles.objectToolbar}>
+            <View style={styles.toolbarGroup}>
+              {/*
+               * The way out has to live here: the header's control scrolls away
+               * with the large title, so in a long list it stops being
+               * reachable and the mode becomes inescapable.
+               */}
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={toggleEditing}
+                style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                testID="r2-exit-select"
+              >
+                <Text style={styles.clearSelection}>
+                  {t('storage.selectDone')}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() =>
+                  setSelected(
+                    allSelected ? [] : (objects ?? []).map((item) => item.key),
+                  )
+                }
+                style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                testID="r2-select-all"
+              >
+                <Text style={styles.clearSelection}>
+                  {allSelected
+                    ? t('storage.deselectAll')
+                    : t('storage.selectAll')}
+                </Text>
+              </Pressable>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: deleteDisabled }}
+              disabled={deleteDisabled}
+              hitSlop={8}
+              onPress={confirmDeleteSelection}
+              style={({ pressed }) => ({
+                opacity: deleteDisabled ? 0.35 : pressed ? 0.6 : 1,
+              })}
+              testID="r2-delete-objects"
+            >
+              <Text style={styles.toolbarDestructive}>
+                {selected.length === 0
+                  ? t('storage.deleteObjects')
+                  : t('storage.deleteSelected', { count: selected.length })}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null
+      }
+      headerRight={
+        // Entry only: once in selection mode the pinned toolbar owns the exit,
+        // so a second control here would just duplicate it — and scroll away.
+        !editing && objects && objects.length > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={toggleEditing}
+            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+            testID="r2-toggle-select"
+          >
+            <Text style={styles.clearSelection}>{t('storage.select')}</Text>
+          </Pressable>
+        ) : undefined
+      }
       loading={loading}
+      onRefresh={load}
       subtitle={
         params.location ? `${params.location.toUpperCase()} · R2` : 'R2'
       }
@@ -392,39 +610,76 @@ export default function R2BucketDetail() {
       </SectionLabel>
       {objects && objects.length > 0 ? (
         <Card>
-          {objects.map((object, index) => (
-            <ListRow
-              key={object.key}
-              chevron={false}
-              last={index === objects.length - 1}
-              testID={`r2-object-${index}`}
-              left={
-                <View style={styles.copy}>
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.objectKey, { color: colors.text }]}
-                  >
-                    {object.key}
-                  </Text>
-                  <Text style={[styles.objectSub, { color: label(mode, 0.4) }]}>
-                    {[
-                      formatBytes(object.size),
-                      object.lastModified
-                        ? relativeTime(object.lastModified, t)
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </Text>
-                </View>
-              }
-            />
-          ))}
+          {objects.map((object, index) => {
+            const picked = selected.includes(object.key);
+            return (
+              <ListRow
+                key={object.key}
+                // The chevron is the visible way in to the row's actions; in
+                // selection mode the checkbox takes over that slot.
+                chevron={!editing}
+                last={index === objects.length - 1}
+                onPress={
+                  busy
+                    ? undefined
+                    : editing
+                      ? () => toggleObject(object.key)
+                      : () => openObjectMenu(object.key)
+                }
+                testID={`r2-object-${index}`}
+                right={
+                  editing ? (
+                    <View
+                      style={[
+                        styles.checkbox,
+                        picked
+                          ? { backgroundColor: accent.orange, borderColor: accent.orange }
+                          : { borderColor: label(mode, 0.25) },
+                      ]}
+                    >
+                      {picked ? (
+                        <Check
+                          accessibilityElementsHidden
+                          color={foreground.onAccent}
+                          size={13}
+                          strokeWidth={3}
+                        />
+                      ) : null}
+                    </View>
+                  ) : undefined
+                }
+                left={
+                  <View style={styles.copy}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.objectKey, { color: colors.text }]}
+                    >
+                      {objectName(object.key)}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.objectSub, { color: label(mode, 0.4) }]}
+                    >
+                      {[
+                        objectPrefix(object.key),
+                        formatBytes(object.size),
+                        object.lastModified
+                          ? relativeTime(object.lastModified, t)
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Text>
+                  </View>
+                }
+              />
+            );
+          })}
         </Card>
       ) : (
-        <Text style={[styles.empty, { color: label(mode, 0.4) }]}>
+        <InlineEmpty>
           {t('storage.noObjects')}
-        </Text>
+        </InlineEmpty>
       )}
 
       <SectionLabel>{t('storage.sectionActions')}</SectionLabel>
@@ -588,6 +843,41 @@ const styles = StyleSheet.create({
   copy: {
     flex: 1,
     minWidth: 0,
+  },
+  checkbox: {
+    alignItems: 'center',
+    borderRadius: 11,
+    borderWidth: 1.5,
+    height: 22,
+    justifyContent: 'center',
+    width: 22,
+  },
+  clearSelection: {
+    color: accent.orange,
+    fontSize: 16,
+  },
+  /*
+   * Both toolbar sides are text buttons, as iOS toolbars are. A filled
+   * destructive Button would be invisible here: its background is `surface`
+   * (#1c1c1e) and the toolbar is `tabbar` (#161618), so only the label showed.
+   */
+  toolbarDestructive: {
+    color: accent.red,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  objectToolbar: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    // Standard toolbar row height, so both labels are comfortably tappable.
+    minHeight: 44,
+  },
+  /** Mode controls sit together, away from the destructive action. */
+  toolbarGroup: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 20,
   },
   deleteLabel: {
     color: accent.red,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,7 @@ import {
   Pill,
   SectionLabel,
   statusColor,
+  InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -30,23 +31,21 @@ export default function HomeLoadBalancing() {
   const [snapshot, setSnapshot] = useState<LoadBalancingSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    void fetchLoadBalancingSnapshot(params.accountId || undefined)
-      .then((next) => {
-        if (active) {
-          setSnapshot(next);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      });
-    return () => {
-      active = false;
-    };
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const next = await fetchLoadBalancingSnapshot(
+        params.accountId || undefined,
+      );
+      setSnapshot(next);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    }
   }, [params.accountId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const pageError =
     error ??
@@ -59,6 +58,7 @@ export default function HomeLoadBalancing() {
       backLabel={t('tabs.home')}
       error={pageError}
       loading={!snapshot && !error}
+      onRefresh={load}
       subtitle={
         params.accountName
           ? params.accountName
@@ -69,9 +69,9 @@ export default function HomeLoadBalancing() {
       title={t('home.mgmtLb')}
     >
       {snapshot && snapshot.balancers.length === 0 ? (
-        <Text style={[styles.empty, { color: label(mode, 0.45) }]}>
+        <InlineEmpty>
           {t('lb.empty')}
-        </Text>
+        </InlineEmpty>
       ) : (
         snapshot?.balancers.map((balancer) => {
           const status = balancerStatus(balancer);
@@ -157,11 +157,6 @@ const styles = StyleSheet.create({
     height: 8,
     marginTop: 6,
     width: 8,
-  },
-  empty: {
-    fontSize: 14,
-    lineHeight: 20,
-    paddingHorizontal: 16,
   },
   header: {
     alignItems: 'center',

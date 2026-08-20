@@ -14,6 +14,33 @@ export function compactNumber(value: number): string {
   return String(value);
 }
 
+/**
+ * Compact count rounded to the nearest ten, keeping tens-level precision
+ * while still using K/M/B units, e.g. 62234 → "62.23K", 1760 → "1.76K",
+ * 124 → "120". Two decimals in the K range preserve the tens digit exactly
+ * (0.01K = 10). Used for visits / page views where a coarse "62.2K" hides
+ * meaningful precision.
+ */
+export function preciseTens(value: number): string {
+  const rounded = Math.round(value / 10) * 10;
+  const withUnit = (amount: number, unit: string) =>
+    `${amount.toFixed(2).replace(/\.?0+$/, '')}${unit}`;
+  if (rounded < 1_000) {
+    try {
+      return new Intl.NumberFormat().format(rounded);
+    } catch {
+      return String(rounded);
+    }
+  }
+  if (rounded < 1_000_000) {
+    return withUnit(rounded / 1_000, 'K');
+  }
+  if (rounded < 1_000_000_000) {
+    return withUnit(rounded / 1_000_000, 'M');
+  }
+  return withUnit(rounded / 1_000_000_000, 'B');
+}
+
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 /** "12m ago" / "3h ago" style relative timestamps, translated via t(). */

@@ -22,6 +22,7 @@
     "node_modules",
     ".worktrees",
     "Cloudflare Client App Design",
-    "docs/design-reference"
+    "docs/design-reference",
+    "oauth-relay"
   ]
 }

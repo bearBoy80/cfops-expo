@@ -12,6 +12,7 @@ import {
 import { invalidateStorageSnapshot } from '@/src/cloudflare/accountResources';
 import {
   fetchStorageMetrics,
+  invalidateStorageMetrics,
   type D1DatabaseMetrics,
 } from '@/src/cloudflare/analytics';
 import { getBearerForConnection } from '@/src/cloudflare/resources';
@@ -23,6 +24,7 @@ import {
   SectionLabel,
   showActionMenu,
   useToast,
+  InlineEmpty,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -50,52 +52,39 @@ export default function D1DatabaseDetail() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    void getBearerForConnection(params.connectionId)
-      .then(async (bearer) => {
-        await Promise.all([
-          getD1Database(bearer, params.accountId, params.database)
-            .then((next) => {
-              if (active) {
-                setDetail(next);
-              }
-            })
-            .catch(() => {}),
-          listD1Tables(bearer, params.accountId, params.database)
-            .then((names) => {
-              if (active) {
-                setTables(names);
-              }
-            })
-            .catch(() => {
-              if (active) {
-                setTables([]);
-              }
-            }),
-          fetchStorageMetrics(bearer, params.accountId)
-            .then((accountMetrics) => {
-              if (active) {
-                setMetrics(accountMetrics.d1.get(params.database) ?? null);
-              }
-            })
-            .catch(() => {}),
-        ]);
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
-      });
-    return () => {
-      active = false;
-    };
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const bearer = await getBearerForConnection(params.connectionId);
+      await Promise.all([
+        getD1Database(bearer, params.accountId, params.database)
+          .then((next) => {
+            setDetail(next);
+          })
+          .catch(() => {}),
+        listD1Tables(bearer, params.accountId, params.database)
+          .then((names) => {
+            setTables(names);
+          })
+          .catch(() => {
+            setTables([]);
+          }),
+        fetchStorageMetrics(bearer, params.accountId)
+          .then((accountMetrics) => {
+            setMetrics(accountMetrics.d1.get(params.database) ?? null);
+          })
+          .catch(() => {}),
+      ]);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    } finally {
+      setLoading(false);
+    }
   }, [params.accountId, params.connectionId, params.database]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const confirmDelete = useCallback(() => {
     if (busy) {
@@ -119,6 +108,7 @@ export default function D1DatabaseDetail() {
               )
               .then(() => {
                 invalidateStorageSnapshot();
+                invalidateStorageMetrics(params.accountId);
                 showToast(t('storage.databaseDeleted'));
                 router.back();
               })
@@ -153,6 +143,7 @@ export default function D1DatabaseDetail() {
       backLabel={t('storage.title')}
       error={error}
       loading={loading}
+      onRefresh={load}
       subtitle={params.accountName}
       title={params.name ?? params.database}
     >
@@ -254,9 +245,9 @@ export default function D1DatabaseDetail() {
           ))}
         </Card>
       ) : (
-        <Text style={[styles.empty, { color: label(mode, 0.4) }]}>
+        <InlineEmpty>
           {t('storage.noTables')}
-        </Text>
+        </InlineEmpty>
       )}
 
       <SectionLabel>{t('storage.sectionActions')}</SectionLabel>
@@ -281,12 +272,6 @@ const styles = StyleSheet.create({
   deleteLabel: {
     color: accent.red,
     fontSize: 17,
-  },
-  empty: {
-    fontSize: 14,
-    marginTop: 8,
-    paddingHorizontal: 32,
-    textAlign: 'center',
   },
   mono: {
     fontFamily: 'Menlo',

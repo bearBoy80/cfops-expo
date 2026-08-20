@@ -1,10 +1,11 @@
 import { CloudflareApiError, listZones, type CfZone } from './api';
 import {
-  getConnectionOauthTokens,
   getConnectionToken,
   listConnections,
   type CloudflareConnection,
 } from './connections';
+import { getOauthAccessToken } from './oauthSession';
+import { createTtlCache } from './ttlCache';
 
 export interface ZoneListItem extends CfZone {
   connectionId: string;
@@ -30,13 +31,16 @@ export interface ZonesSnapshot {
   issues: ConnectionIssue[];
 }
 
-/** Resolves the bearer used for API calls, regardless of credential type. */
+/**
+ * Resolves the bearer used for API calls, regardless of credential type.
+ * OAuth grants are renewed on the way out, so callers never have to think
+ * about access token lifetime.
+ */
 export async function getConnectionBearer(
   connection: CloudflareConnection,
 ): Promise<string | null> {
   if (connection.authType === 'oauth') {
-    const tokens = await getConnectionOauthTokens(connection.id);
-    return tokens?.accessToken ?? null;
+    return getOauthAccessToken(connection.id);
   }
   return getConnectionToken(connection.id);
 }
@@ -129,7 +133,7 @@ async function fetchSnapshot(): Promise<ZonesSnapshot> {
 
 const SNAPSHOT_TTL_MS = 30_000;
 
-let cached: { at: number; promise: Promise<ZonesSnapshot> } | null = null;
+const zonesCache = createTtlCache(SNAPSHOT_TTL_MS, fetchSnapshot);
 
 /**
  * Aggregated zones across every stored credential. Results are cached
@@ -138,21 +142,9 @@ let cached: { at: number; promise: Promise<ZonesSnapshot> } | null = null;
 export function fetchZonesSnapshot(options?: {
   force?: boolean;
 }): Promise<ZonesSnapshot> {
-  const now = Date.now();
-  if (!options?.force && cached && now - cached.at < SNAPSHOT_TTL_MS) {
-    return cached.promise;
-  }
-  const promise = fetchSnapshot();
-  cached = { at: now, promise };
-  // A failed fetch should not poison the cache window.
-  promise.catch(() => {
-    if (cached?.promise === promise) {
-      cached = null;
-    }
-  });
-  return promise;
+  return zonesCache.get(options);
 }
 
 export function invalidateZonesSnapshot(): void {
-  cached = null;
+  zonesCache.invalidate();
 }

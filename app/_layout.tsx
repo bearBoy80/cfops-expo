@@ -4,6 +4,10 @@ import { useEffect } from 'react';
 import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import {
+  SafeAreaProvider,
+  initialWindowMetrics,
+} from 'react-native-safe-area-context';
 import { AuthGateProvider, useAuth } from '@/src/auth/AuthGate';
 import { routeGuards } from '@/src/auth/routeGuards';
 import { ActionMenuHost, ToastProvider } from '@/src/components/ui';
@@ -52,9 +56,11 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <ThemeProvider>
-      <ThemedRoot />
-    </ThemeProvider>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <ThemeProvider>
+        <ThemedRoot />
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
 

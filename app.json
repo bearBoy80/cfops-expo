@@ -55,11 +55,9 @@
     },
     "extra": {
       "cloudflareOauth": {
-        "clientId": "",
-        "scopes": [
-          "account.read",
-          "offline_access"
-        ]
+        "clientId": "d3bc3dfca1276d0d5ed8f2a6fb148473",
+        "redirectUri": "https://cfops-oauth-relay.aiall.workers.dev/callback",
+        "scopes": []
       }
     }
   }

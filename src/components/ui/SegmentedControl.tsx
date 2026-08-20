@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
-import { accent, foreground, label } from '../../theme/tokens';
+import { accent, font, foreground, label, maxScale, spacing } from '../../theme/tokens';
+import { haptics } from '../../utils/haptics';
 
 export interface Segment<T extends string> {
   id: T;
@@ -31,7 +32,12 @@ export function SegmentedControl<T extends string>({
             accessibilityRole="button"
             accessibilityState={{ selected: active }}
             key={segment.id}
-            onPress={() => onChange(segment.id)}
+            onPress={() => {
+              if (!active) {
+                haptics.selection();
+              }
+              onChange(segment.id);
+            }}
             style={[
               styles.segment,
               active && { backgroundColor: accent.orange },
@@ -39,6 +45,8 @@ export function SegmentedControl<T extends string>({
             testID={`${testIDPrefix}-${segment.id}`}
           >
             <Text
+              maxFontSizeMultiplier={maxScale('subhead')}
+              numberOfLines={1}
               style={[
                 styles.label,
                 { color: active ? foreground.onAccent : label(mode, 0.6) },
@@ -57,13 +65,12 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 12,
     flexDirection: 'row',
-    gap: 4,
-    marginHorizontal: 16,
-    padding: 4,
+    gap: spacing.xs,
+    marginHorizontal: spacing.lg,
+    padding: spacing.xs,
   },
   label: {
-    fontSize: 13,
-    fontWeight: '600',
+    ...font('subhead', '600'),
   },
   segment: {
     alignItems: 'center',

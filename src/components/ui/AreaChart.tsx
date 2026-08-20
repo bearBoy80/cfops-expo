@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import { useTheme } from '../../theme/ThemeContext';
@@ -23,23 +23,37 @@ function compact(value: number): string {
  * Minimal dependency-free area chart (single series) in the style of the
  * design reference: gradient fill, left value axis, hour labels below.
  */
-export function AreaChart({
+export const AreaChart = memo(function AreaChart({
   data,
   color,
   height = 110,
+  accessibilityLabel,
 }: {
   data: AreaChartPoint[];
   color: string;
   height?: number;
+  /** Spoken summary of the series for screen readers. */
+  accessibilityLabel?: string;
 }) {
   const { mode } = useTheme();
   const [width, setWidth] = useState(0);
 
-  const max = Math.max(...data.map((point) => point.value), 1);
+  const max = useMemo(
+    () => Math.max(...data.map((point) => point.value), 1),
+    [data],
+  );
   const ticks = [max, max / 2, 0];
+  const peak = useMemo(
+    () =>
+      data.reduce(
+        (best, point) => (point.value > best.value ? point : best),
+        data[0] ?? { label: '', value: 0 },
+      ),
+    [data],
+  );
 
   const plotWidth = Math.max(width - 34, 0);
-  const buildPaths = () => {
+  const paths = useMemo(() => {
     if (plotWidth <= 0 || data.length < 2) {
       return null;
     }
@@ -51,11 +65,19 @@ export function AreaChart({
     const line = `M${points.join(' L')}`;
     const area = `${line} L${plotWidth},${height} L0,${height} Z`;
     return { line, area };
-  };
-  const paths = buildPaths();
+  }, [data, plotWidth, max, height]);
+  // Cap x-axis labels (~8) so long ranges like 30 days stay readable.
+  const labelStride = Math.max(1, Math.ceil(data.length / 8));
 
   return (
-    <View>
+    <View
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={
+        accessibilityLabel ??
+        (peak.label ? `${compact(peak.value)} peak at ${peak.label}` : undefined)
+      }
+    >
       <View style={{ flexDirection: 'row' }}>
         <View style={{ width: 34, height, justifyContent: 'space-between', paddingVertical: 2 }}>
           {ticks.map((tick, index) => (
@@ -100,7 +122,7 @@ export function AreaChart({
         }}
       >
         {data
-          .filter((_, index) => index % 2 === 0)
+          .filter((_, index) => index % labelStride === 0)
           .map((point, index) => (
             <Text
               key={`${point.label}-${index}`}
@@ -112,4 +134,4 @@ export function AreaChart({
       </View>
     </View>
   );
-}
+});

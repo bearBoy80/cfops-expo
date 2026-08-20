@@ -1,12 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  AppState,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { ActivityIndicator, AppState, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/src/auth/AuthGate';
@@ -85,7 +78,9 @@ export default function Onboarding() {
 
   const handleCreated = () => setStep('connect');
 
-  const handleSkip = async () => {
+  // Shared by "skip for now" and by a successful credential bind: both leave
+  // the connect step behind and land on the final step.
+  const advanceToDone = async () => {
     await advanceOnboarding('done');
     setStep('done');
   };
@@ -110,51 +105,43 @@ export default function Onboarding() {
       accessibilityState={{ busy: loading }}
       style={[styles.safeArea, { backgroundColor: colors.bg }]}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.flex}
-      >
-        {loading ? (
-          <View
-            accessibilityLabel={t('onboarding.loadingA11y')}
-            accessibilityRole="progressbar"
-            style={styles.loading}
-            testID="onboarding-loading"
-          >
-            <ActivityIndicator color={colors.text} size="large" />
-          </View>
-        ) : null}
-        {!loading && step === 'welcome' ? (
-          <WelcomeStep onContinue={() => setStep('create')} />
-        ) : null}
-        {!loading && step === 'create' ? (
-          <CreateAccountStep
-            draft={createDraft}
-            onBack={() => setStep('welcome')}
-            onCreated={handleCreated}
-            onDraftChange={(update) => {
-              setCreateDraft((current) => ({ ...current, ...update }));
-            }}
-          />
-        ) : null}
-        {!loading && step === 'connect' ? (
-          <ConnectStep
-            onBack={() => setStep('create')}
-            onSkip={handleSkip}
-          />
-        ) : null}
-        {!loading && step === 'done' ? (
-          <DoneStep onEnterConsole={handleEnterConsole} />
-        ) : null}
-      </KeyboardAvoidingView>
+      {loading ? (
+        <View
+          accessibilityLabel={t('onboarding.loadingA11y')}
+          accessibilityRole="progressbar"
+          style={styles.loading}
+          testID="onboarding-loading"
+        >
+          <ActivityIndicator color={colors.text} size="large" />
+        </View>
+      ) : null}
+      {!loading && step === 'welcome' ? (
+        <WelcomeStep onContinue={() => setStep('create')} />
+      ) : null}
+      {!loading && step === 'create' ? (
+        <CreateAccountStep
+          draft={createDraft}
+          onBack={() => setStep('welcome')}
+          onCreated={handleCreated}
+          onDraftChange={(update) => {
+            setCreateDraft((current) => ({ ...current, ...update }));
+          }}
+        />
+      ) : null}
+      {!loading && step === 'connect' ? (
+        <ConnectStep
+          onAdvance={advanceToDone}
+          onBack={() => setStep('create')}
+        />
+      ) : null}
+      {!loading && step === 'done' ? (
+        <DoneStep onEnterConsole={handleEnterConsole} />
+      ) : null}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
   loading: {
     alignItems: 'center',
     flex: 1,

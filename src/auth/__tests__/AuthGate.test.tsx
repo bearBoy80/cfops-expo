@@ -2,6 +2,7 @@ import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { AppState, type AppStateStatus } from 'react-native';
 import { AuthGateProvider, useAuth } from '../AuthGate';
+import { resetAutoLock, suspendAutoLock } from '../autoLock';
 import {
   completeOnboarding,
   createAccount,
@@ -62,6 +63,7 @@ const appStateSpy = jest.spyOn(AppState, 'addEventListener');
 
 beforeEach(() => {
   mockStore.clear();
+  resetAutoLock();
   appStateListener = undefined;
   appStateSpy.mockImplementation((_type, listener) => {
     appStateListener = listener;
@@ -137,6 +139,27 @@ test('relocks an unlocked account when the app leaves the foreground', async () 
   act(() => result.current.unlock());
   act(() => appStateListener?.('background'));
 
+  expect(result.current.status).toBe('locked');
+});
+
+test('stays unlocked while an auth sheet suspends the lock', async () => {
+  await createAccount('JT', 'hunter2secret', false);
+  const { result } = renderHook(() => useAuth(), { wrapper });
+  await waitFor(() => expect(result.current.status).toBe('locked'));
+
+  act(() => result.current.unlock());
+
+  // Presenting the OAuth sheet leaves the foreground without the user leaving
+  // the app; locking here would unmount the screen awaiting the callback.
+  const release = suspendAutoLock();
+  act(() => appStateListener?.('inactive'));
+  expect(result.current.status).toBe('unlocked');
+
+  act(() => appStateListener?.('active'));
+  release();
+
+  // Once the sheet is gone, ordinary backgrounding locks again.
+  act(() => appStateListener?.('background'));
   expect(result.current.status).toBe('locked');
 });
 

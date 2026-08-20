@@ -3,6 +3,7 @@ import {
   formatBytes,
   formatClock,
   formatCurrency,
+  preciseTens,
   relativeTime,
 } from '../format';
 
@@ -31,6 +32,16 @@ describe('relativeTime', () => {
 
   test('returns an empty string for invalid dates', () => {
     expect(relativeTime('not-a-date', t)).toBe('');
+  });
+});
+
+describe('preciseTens', () => {
+  test('rounds to the nearest ten and keeps K/M units', () => {
+    expect(preciseTens(124)).toBe('120');
+    expect(preciseTens(62234)).toBe('62.23K');
+    expect(preciseTens(1760)).toBe('1.76K');
+    expect(preciseTens(5000)).toBe('5K');
+    expect(preciseTens(1_234_567)).toBe('1.23M');
   });
 });
 

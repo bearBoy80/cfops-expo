@@ -1,13 +1,14 @@
 import Constants from 'expo-constants';
 import {
   exchangeCodeAsync,
-  makeRedirectUri,
   refreshAsync,
   type AuthRequest,
   type AuthSessionResult,
   type DiscoveryDocument,
   type TokenResponse,
 } from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
+import { suspendAutoLock } from '../auth/autoLock';
 import { CloudflareApiError } from './api';
 
 /**
@@ -21,8 +22,67 @@ export const discovery: DiscoveryDocument = {
   userInfoEndpoint: 'https://dash.cloudflare.com/oauth2/userinfo',
 };
 
+/**
+ * Scope ids as returned by `GET /client/v4/oauth/scopes`. They do not follow
+ * the API-token permission names: the account scope is `account-settings.read`
+ * (not `account.read`), Workers is `workers-scripts.read`, KV is
+ * `workers-kv-storage.read` and Pages is `page.read` (singular).
+ *
+ * Registering scopes on the OAuth client only decides what may be asked for —
+ * the authorization request still has to enumerate every scope it wants.
+ */
+const DEFAULT_SCOPES = [
+  // Accounts and audit log. Note this does *not* cover billing: subscriptions
+  // need `Billing Read`, which Cloudflare does not expose as an OAuth scope at
+  // all, so that screen is reachable only through an API token.
+  'account-settings.read',
+  // Zones and their settings.
+  'zone.read',
+  'zone.write',
+  'zone-settings.read',
+  'zone-settings.write',
+  'ssl-and-certificates.read',
+  'cache.purge',
+  'dns.read',
+  'dns.write',
+  'firewall-services.read',
+  // Storage.
+  'workers-r2.read',
+  'workers-r2.write',
+  'workers-kv-storage.read',
+  'workers-kv-storage.write',
+  'd1.read',
+  'd1.write',
+  // Compute.
+  'workers-scripts.read',
+  'workers-scripts.write',
+  'workers-routes.read',
+  'workers-routes.write',
+  'page.read',
+  'page.write',
+  // Insights.
+  'analytics.read',
+  'account-analytics.read',
+  'load-balancers.read',
+  'load-balancing-monitors-and-pools.read',
+  'notifications.read',
+];
+
+/**
+ * Cloudflare's OAuth server (Hydra) only issues a refresh token when this
+ * scope is requested, no matter which grant types the client registered.
+ * Without it every session dies silently once the access token expires, so it
+ * is appended here rather than left to each caller.
+ */
+const REFRESH_SCOPE = 'offline_access';
+
 interface OauthConfig {
   clientId: string;
+  /**
+   * Public URL of the callback relay, registered on the OAuth client. It has
+   * to be `https`: Cloudflare rejects private-use schemes outright.
+   */
+  redirectUri: string;
   scopes: string[];
 }
 
@@ -31,37 +91,92 @@ export function getOauthConfig(): OauthConfig | null {
     | Partial<OauthConfig>
     | undefined;
 
-  if (!extra?.clientId || extra.clientId.trim().length === 0) {
+  const clientId = extra?.clientId?.trim() ?? '';
+  const configuredRedirect = extra?.redirectUri?.trim() ?? '';
+  if (clientId.length === 0 || configuredRedirect.length === 0) {
     return null;
   }
 
+  const configured =
+    Array.isArray(extra?.scopes) && extra.scopes.length > 0
+      ? extra.scopes
+      : DEFAULT_SCOPES;
+
   return {
-    clientId: extra.clientId.trim(),
-    scopes:
-      Array.isArray(extra.scopes) && extra.scopes.length > 0
-        ? extra.scopes
-        : [
-            'account.read',
-            'workers.read',
-            'workers_kv.read',
-            'workers_r2.read',
-            'd1.read',
-            'pages.read',
-            'offline_access',
-          ],
+    clientId,
+    redirectUri: configuredRedirect,
+    scopes: configured.includes(REFRESH_SCOPE)
+      ? configured
+      : [...configured, REFRESH_SCOPE],
   };
 }
 
-export const redirectUri = makeRedirectUri({
-  scheme: 'cfops',
-  path: 'oauth/callback',
-});
+/**
+ * Where the callback relay sends the browser to re-enter the app. This is *not*
+ * the registered redirect URI — Cloudflare never sees it, and it must not be
+ * used when exchanging the code.
+ *
+ * Deliberately a constant instead of `makeRedirectUri`: that helper builds a
+ * link back to the *current* environment, so a development build gets the Metro
+ * host spliced in (`cfops://192.168.x.x:8081/oauth/callback`) and Expo Go gets
+ * an `exp://` scheme entirely. The relay always redirects to one fixed URL, and
+ * `ASWebAuthenticationSession` only intercepts the scheme it was started with,
+ * so this value has to be stable across environments and match the relay.
+ */
+export const appCallbackUrl = 'cfops://oauth/callback';
+
+/**
+ * Runs the browser half of the flow.
+ *
+ * Cloudflare demands an `https` redirect URI while iOS can only intercept a
+ * private-use scheme, and `AuthRequest.promptAsync` listens on whatever it sent
+ * as `redirect_uri`. So the URL is built with the relay address and the session
+ * is opened against the app scheme by hand. `parseReturnUrl` still performs the
+ * `state` check.
+ */
+export async function authorize(
+  request: AuthRequest,
+): Promise<AuthSessionResult> {
+  const url = await request.makeAuthUrlAsync(discovery);
+
+  if (__DEV__) {
+    console.log('[oauth] authorize url:', url);
+    console.log('[oauth] intercepting scheme of:', appCallbackUrl);
+  }
+
+  // Presenting the session drops the app out of the foreground, which would
+  // otherwise re-lock the console and unmount the screen waiting for the code.
+  const releaseAutoLock = suspendAutoLock();
+  let result: Awaited<ReturnType<typeof WebBrowser.openAuthSessionAsync>>;
+  try {
+    result = await WebBrowser.openAuthSessionAsync(url, appCallbackUrl);
+  } finally {
+    releaseAutoLock();
+  }
+
+  if (__DEV__) {
+    console.log('[oauth] session result:', result.type, JSON.stringify(result));
+  }
+
+  if (result.type !== 'success') {
+    return { type: result.type } as AuthSessionResult;
+  }
+
+  return request.parseReturnUrl(result.url);
+}
 
 export interface OauthTokens {
   accessToken: string;
   refreshToken?: string;
   /** Epoch milliseconds after which the access token must be refreshed. */
   expiresAt?: number;
+  /**
+   * Space-separated scopes the token was actually granted, which is not
+   * necessarily what was requested. Adding scopes to the OAuth client does not
+   * upgrade tokens that were already issued, so this is the only way to tell a
+   * stale grant apart from an endpoint that has no scope at all.
+   */
+  scope?: string;
 }
 
 function toOauthTokens(response: TokenResponse): OauthTokens {
@@ -71,6 +186,7 @@ function toOauthTokens(response: TokenResponse): OauthTokens {
     expiresAt: response.expiresIn
       ? (response.issuedAt + response.expiresIn) * 1000
       : undefined,
+    scope: response.scope,
   };
 }
 
@@ -100,7 +216,9 @@ export async function exchangeAuthorizationCode(
       {
         clientId: config.clientId,
         code: result.params.code,
-        redirectUri,
+        // Must be the value sent in the authorization request, not the app
+        // scheme the relay bounced us back through.
+        redirectUri: config.redirectUri,
         extraParams: request.codeVerifier
           ? { code_verifier: request.codeVerifier }
           : undefined,
@@ -111,7 +229,16 @@ export async function exchangeAuthorizationCode(
     throw new CloudflareApiError('network');
   }
 
-  return toOauthTokens(response);
+  const tokens = toOauthTokens(response);
+
+  if (__DEV__) {
+    // A `forbidden` on a screen usually means the scope is missing here, not
+    // that the request is wrong.
+    console.log('[oauth] granted scope:', tokens.scope ?? '(none reported)');
+    console.log('[oauth] refresh token issued:', Boolean(tokens.refreshToken));
+  }
+
+  return tokens;
 }
 
 export async function refreshOauthTokens(

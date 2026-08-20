@@ -3,9 +3,8 @@ import {
   ActivityIndicator,
   AppState,
   Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -245,118 +244,129 @@ export default function Unlock() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.content}
+      <ScrollView
+        // The form stays centred while it fits and starts scrolling once the
+        // keyboard squeezes it, so the unlock button is never cut off.
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={styles.scrollContent}
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        style={styles.scroll}
       >
-        <View
-          style={[
-            styles.icon,
-            { backgroundColor: tint(accent.orange, '22') },
-          ]}
-        >
-          <LockKeyhole color={accent.orange} size={34} strokeWidth={2} />
-        </View>
-
-        <Text style={[styles.title, { color: colors.text }]}>
-          {name
-            ? t('unlock.welcomeBackName', { name })
-            : t('unlock.welcomeBack')}
-        </Text>
-        <Text style={[styles.subtitle, { color: label(mode, 0.52) }]}>
-          {t('unlock.subtitle')}
-        </Text>
-
-        <View style={styles.form}>
-          <AuthTextInput
-            disabled={authBusy}
-            onChangeText={changePassword}
-            onSubmitEditing={() => void submit()}
-            placeholder={t('unlock.passwordPlaceholder')}
-            returnKeyType="go"
-            secureTextEntry
-            showPasswordToggle
-            testID="password"
-            textContentType="password"
-            value={password}
-          />
-
-          {error ? (
-            <Text accessibilityRole="alert" style={styles.error}>
-              {error}
-            </Text>
-          ) : null}
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            accessibilityLabel={
-              authMode === 'password'
-                ? t('unlock.unlocking')
-                : t('unlock.unlock')
-            }
-            accessibilityRole="button"
-            accessibilityState={{
-              busy: authMode === 'password',
-              disabled: authBusy,
-            }}
-            disabled={authBusy}
-            onPress={() => void submit()}
+        <View style={styles.content}>
+          <View
             style={[
-              styles.primaryButton,
-              { backgroundColor: accent.orange },
-              authBusy && styles.actionDisabled,
+              styles.icon,
+              { backgroundColor: tint(accent.orange, '22') },
             ]}
           >
-            {authMode === 'password' ? (
-              <>
-                <ActivityIndicator color={foreground.onAccent} size="small" />
+            <LockKeyhole color={accent.orange} size={34} strokeWidth={2} />
+          </View>
+
+          <Text style={[styles.title, { color: colors.text }]}>
+            {name
+              ? t('unlock.welcomeBackName', { name })
+              : t('unlock.welcomeBack')}
+          </Text>
+          <Text style={[styles.subtitle, { color: label(mode, 0.52) }]}>
+            {t('unlock.subtitle')}
+          </Text>
+
+          <View style={styles.form}>
+            <AuthTextInput
+              disabled={authBusy}
+              onChangeText={changePassword}
+              onSubmitEditing={() => void submit()}
+              placeholder={t('unlock.passwordPlaceholder')}
+              returnKeyType="go"
+              secureTextEntry
+              showPasswordToggle
+              testID="password"
+              textContentType="password"
+              value={password}
+            />
+
+            {error ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {error}
+              </Text>
+            ) : null}
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              accessibilityLabel={
+                authMode === 'password'
+                  ? t('unlock.unlocking')
+                  : t('unlock.unlock')
+              }
+              accessibilityRole="button"
+              accessibilityState={{
+                busy: authMode === 'password',
+                disabled: authBusy,
+              }}
+              disabled={authBusy}
+              onPress={() => void submit()}
+              style={[
+                styles.primaryButton,
+                { backgroundColor: accent.orange },
+                authBusy && styles.actionDisabled,
+              ]}
+            >
+              {authMode === 'password' ? (
+                <>
+                  <ActivityIndicator
+                    color={foreground.onAccent}
+                    size="small"
+                  />
+                  <Text
+                    style={[
+                      styles.primaryButtonText,
+                      { color: foreground.onAccent },
+                    ]}
+                  >
+                    {t('unlock.unlocking')}
+                  </Text>
+                </>
+              ) : (
                 <Text
                   style={[
                     styles.primaryButtonText,
                     { color: foreground.onAccent },
                   ]}
                 >
-                  {t('unlock.unlocking')}
+                  {t('unlock.unlock')}
                 </Text>
-              </>
-            ) : (
-              <Text
-                style={[
-                  styles.primaryButtonText,
-                  { color: foreground.onAccent },
-                ]}
-              >
-                {t('unlock.unlock')}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
+              )}
+            </TouchableOpacity>
+          </View>
 
-        {biometricsEnabled ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{
-              busy: authMode === 'biometric',
-              disabled: authBusy,
-            }}
-            disabled={authBusy}
-            onPress={() => void tryBiometrics()}
-            style={[
-              styles.biometricButton,
-              authBusy && styles.actionDisabled,
-            ]}
-          >
-            <ScanFace color={label(mode, 0.65)} size={19} />
-            <Text
-              style={[styles.biometricText, { color: label(mode, 0.65) }]}
+          {biometricsEnabled ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{
+                busy: authMode === 'biometric',
+                disabled: authBusy,
+              }}
+              disabled={authBusy}
+              onPress={() => void tryBiometrics()}
+              style={[
+                styles.biometricButton,
+                authBusy && styles.actionDisabled,
+              ]}
             >
-              {authMode === 'biometric'
-                ? t('unlock.authenticating')
-                : t('unlock.useBiometrics')}
-            </Text>
-          </Pressable>
-        ) : null}
-      </KeyboardAvoidingView>
+              <ScanFace color={label(mode, 0.65)} size={19} />
+              <Text
+                style={[styles.biometricText, { color: label(mode, 0.65) }]}
+              >
+                {authMode === 'biometric'
+                  ? t('unlock.authenticating')
+                  : t('unlock.useBiometrics')}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -379,8 +389,6 @@ const styles = StyleSheet.create({
   },
   content: {
     alignSelf: 'center',
-    flex: 1,
-    justifyContent: 'center',
     maxWidth: 440,
     paddingHorizontal: 24,
     width: '100%',
@@ -416,6 +424,13 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   subtitle: {
     fontSize: 14,

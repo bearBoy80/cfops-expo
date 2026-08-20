@@ -10,6 +10,11 @@ import {
   type ComputeSnapshot,
 } from '../cloudflare/accountResources';
 import { fetchWorkerMetrics } from '../cloudflare/analytics';
+import {
+  getAccountScope,
+  resetAccountScope,
+  setAccountScope,
+} from '../state/accountScope';
 import { ThemeProvider } from '../theme/ThemeContext';
 
 const mockPush = jest.fn();
@@ -41,15 +46,12 @@ jest.mock('../cloudflare/accountResources', () => {
     ...actual,
     fetchComputeSnapshot: jest.fn(),
     invalidateComputeSnapshot: jest.fn(),
+    getAccountBearer: jest.fn().mockResolvedValue('bearer-1'),
   };
 });
 
 jest.mock('../cloudflare/analytics', () => ({
   fetchWorkerMetrics: jest.fn(),
-}));
-
-jest.mock('../cloudflare/resources', () => ({
-  getBearerForConnection: jest.fn().mockResolvedValue('bearer-1'),
 }));
 
 const scope = {
@@ -113,6 +115,7 @@ const wrap = () =>
 
 beforeEach(() => {
   jest.clearAllMocks();
+  resetAccountScope();
   jest.mocked(fetchComputeSnapshot).mockResolvedValue(snapshot);
   jest.mocked(fetchWorkerMetrics).mockResolvedValue(
     new Map([
@@ -191,6 +194,42 @@ test('opens the pages project detail with routing params', async () => {
       productionScriptName: 'pages-worker--123-production',
     },
   });
+});
+
+test('surfaces an active account filter and clears it in place', async () => {
+  setAccountScope('acc-1');
+  wrap();
+  await waitFor(() => expect(screen.getByText('api-gateway')).toBeTruthy());
+
+  // The banner names the scoped account so a filtered list is never mistaken
+  // for missing resources.
+  expect(screen.getByText('Filtered: Acme Corp')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('scope-banner'));
+
+  expect(getAccountScope()).toBeNull();
+  await waitFor(() =>
+    expect(screen.queryByText('Filtered: Acme Corp')).toBeNull(),
+  );
+});
+
+test('filters workers and pages with the search field', async () => {
+  wrap();
+  await waitFor(() => expect(screen.getByText('api-gateway')).toBeTruthy());
+
+  fireEvent.changeText(screen.getByTestId('compute-search'), 'edge');
+  expect(screen.queryByText('api-gateway')).toBeNull();
+  expect(screen.getByText('edge-cache')).toBeTruthy();
+  expect(screen.getByText('Workers · 1')).toBeTruthy();
+
+  fireEvent.changeText(screen.getByTestId('compute-search'), 'zzz');
+  expect(screen.getByText('No matches for “zzz”.')).toBeTruthy();
+
+  // The query carries over and applies to the Pages segment too.
+  fireEvent.changeText(screen.getByTestId('compute-search'), 'marketing');
+  fireEvent.press(screen.getByTestId('compute-segment-pages'));
+  expect(screen.getByText('marketing-site')).toBeTruthy();
+  expect(screen.queryByText('broken-site')).toBeNull();
 });
 
 test('lists pages projects with deployment info', async () => {

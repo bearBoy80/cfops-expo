@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Linking, StyleSheet, Text } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Globe } from 'lucide-react-native';
 import {
+  CloudflareApiError,
   getZoneSecurityLevel,
   setZoneSecurityLevel,
   type ZoneSecurityLevel,
@@ -19,10 +20,16 @@ import {
   ToggleRow,
   showActionMenu,
   useToast,
+  InlineEmpty,
+  PermissionNotice,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { accent, label } from '@/src/theme/tokens';
+import { accent, label, spacing } from '@/src/theme/tokens';
+import { mapLimit } from '@/src/utils/concurrency';
+
+/** Cap parallel per-zone security-level lookups (accounts can have many zones). */
+const SECURITY_LEVEL_CONCURRENCY = 6;
 
 const FALLBACK_LEVEL: ZoneSecurityLevel = 'medium';
 
@@ -49,63 +56,62 @@ export default function HomeUnderAttack() {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const previousLevels = useRef<Record<string, ZoneSecurityLevel>>({});
 
-  useEffect(() => {
-    let active = true;
+  const load = useCallback(async () => {
+    setError(null);
     const accountId = params.accountId || undefined;
 
-    void fetchZonesSnapshot()
-      .then(async (snapshot) => {
-        const scoped = snapshot.zones.filter(
-          (zone) => !accountId || zone.accountId === accountId,
-        );
-        if (!active) {
-          return;
-        }
-        setZones(scoped);
+    try {
+      const snapshot = await fetchZonesSnapshot();
+      const scoped = snapshot.zones.filter(
+        (zone) => !accountId || zone.accountId === accountId,
+      );
+      setZones(scoped);
 
-        const entries = await Promise.all(
-          scoped.map(async (zone) => {
-            try {
-              const bearer = await getBearerForConnection(zone.connectionId);
-              const level = await getZoneSecurityLevel(bearer, zone.id);
-              return [zone.id, level] as const;
-            } catch {
-              return [zone.id, null] as const;
+      let forbidden = false;
+      const entries = await mapLimit(
+        scoped,
+        SECURITY_LEVEL_CONCURRENCY,
+        async (zone) => {
+          try {
+            const bearer = await getBearerForConnection(zone.connectionId);
+            const level = await getZoneSecurityLevel(bearer, zone.id);
+            return [zone.id, level] as const;
+          } catch (cause) {
+            if (
+              cause instanceof CloudflareApiError &&
+              cause.code === 'forbidden'
+            ) {
+              forbidden = true;
             }
-          }),
-        );
-        if (!active) {
-          return;
-        }
-
-        const next: Record<string, ZoneSecurityLevel | null> = {};
-        const remembered: Record<string, ZoneSecurityLevel> = {};
-        for (const [zoneId, level] of entries) {
-          next[zoneId] = level;
-          if (level && level !== 'under_attack') {
-            remembered[zoneId] = level;
+            return [zone.id, null] as const;
           }
-        }
-        previousLevels.current = remembered;
-        setLevels(next);
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
-      });
+        },
+      );
+      setPermissionDenied(forbidden);
 
-    return () => {
-      active = false;
-    };
+      const next: Record<string, ZoneSecurityLevel | null> = {};
+      const remembered: Record<string, ZoneSecurityLevel> = {};
+      for (const [zoneId, level] of entries) {
+        next[zoneId] = level;
+        if (level && level !== 'under_attack') {
+          remembered[zoneId] = level;
+        }
+      }
+      previousLevels.current = remembered;
+      setLevels(next);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    } finally {
+      setLoading(false);
+    }
   }, [params.accountId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const applyLevel = async (zone: ZoneListItem, value: ZoneSecurityLevel) => {
     setPendingId(zone.id);
@@ -169,6 +175,7 @@ export default function HomeUnderAttack() {
       backLabel={t('tabs.home')}
       error={error}
       loading={loading && !error}
+      onRefresh={load}
       subtitle={t('home.underAttackSubtitle')}
       title={t('home.underAttackTitle')}
     >
@@ -176,10 +183,23 @@ export default function HomeUnderAttack() {
         {t('home.underAttackHint')}
       </Text>
 
+      {permissionDenied ? (
+        <PermissionNotice
+          title={t('common.permissionRequired')}
+          message={t('home.underAttackNoPerm')}
+          actionLabel={t('common.openApiTokens')}
+          onAction={() => {
+            void Linking.openURL(
+              'https://dash.cloudflare.com/profile/api-tokens',
+            );
+          }}
+        />
+      ) : null}
+
       {zones.length === 0 && !loading ? (
-        <Text style={[styles.empty, { color: label(mode, 0.45) }]}>
+        <InlineEmpty>
           {t('home.underAttackEmpty')}
-        </Text>
+        </InlineEmpty>
       ) : (
         <Card>
           {zones.map((zone, index) => {
@@ -212,9 +232,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginBottom: 16,
-  },
-  empty: {
-    fontSize: 14,
-    lineHeight: 20,
+    paddingHorizontal: spacing.lg,
   },
 });

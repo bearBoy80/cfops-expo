@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -18,7 +18,7 @@ import {
   type AlertsSnapshot,
 } from '@/src/cloudflare/management';
 import { ZoneSubpage } from '@/src/components/ZoneSubpage';
-import { Card, ListRow, Pill, SectionLabel } from '@/src/components/ui';
+import { Card, ListRow, Pill, SectionLabel, InlineEmpty } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { accent, label, tint } from '@/src/theme/tokens';
@@ -57,23 +57,19 @@ export default function HomeAlerts() {
   const [snapshot, setSnapshot] = useState<AlertsSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    void fetchAlertsSnapshot(params.accountId || undefined)
-      .then((next) => {
-        if (active) {
-          setSnapshot(next);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setError(cloudflareErrorMessage(cause));
-        }
-      });
-    return () => {
-      active = false;
-    };
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const next = await fetchAlertsSnapshot(params.accountId || undefined);
+      setSnapshot(next);
+    } catch (cause) {
+      setError(cloudflareErrorMessage(cause));
+    }
   }, [params.accountId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const missingPermission =
     !!snapshot &&
@@ -93,6 +89,7 @@ export default function HomeAlerts() {
       backLabel={t('tabs.home')}
       error={pageError}
       loading={!snapshot && !error}
+      onRefresh={load}
       subtitle={
         params.accountName
           ? params.accountName
@@ -104,9 +101,9 @@ export default function HomeAlerts() {
     >
       <SectionLabel>{t('alerts.sectionActive')}</SectionLabel>
       {snapshot && snapshot.alerts.length === 0 ? (
-        <Text style={[styles.empty, { color: label(mode, 0.45) }]}>
+        <InlineEmpty>
           {t(missingPermission ? 'alerts.permissionHint' : 'alerts.empty')}
-        </Text>
+        </InlineEmpty>
       ) : (
         <Card>
           {snapshot?.alerts.map((item, index) => {
@@ -175,11 +172,6 @@ const styles = StyleSheet.create({
   copy: {
     flex: 1,
     minWidth: 0,
-  },
-  empty: {
-    fontSize: 14,
-    lineHeight: 20,
-    paddingHorizontal: 16,
   },
   icon: {
     alignItems: 'center',

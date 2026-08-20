@@ -115,17 +115,58 @@ describe('Settings tab', () => {
     expect(mockPush).toHaveBeenCalledWith('/connect');
   });
 
-  test('lists discovered Cloudflare accounts', async () => {
+  test('groups discovered accounts under their credential', async () => {
     jest.mocked(listConnections).mockResolvedValue([connection]);
     wrap();
 
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeTruthy());
     expect(screen.getByText('Side Project')).toBeTruthy();
+    // The credential is its own row, and says how many accounts it covers
+    // instead of echoing one account name onto every row.
+    expect(screen.getByText('Ops token')).toBeTruthy();
+    expect(screen.getByText('API Token · 2 accounts')).toBeTruthy();
     expect(screen.getByText('Connected Accounts · 2')).toBeTruthy();
     expect(screen.queryByText('No accounts connected')).toBeNull();
   });
 
-  test('disconnects a credential after confirmation', async () => {
+  test('folds the accounts away and back', async () => {
+    jest.mocked(listConnections).mockResolvedValue([connection]);
+    wrap();
+    await waitFor(() => expect(screen.getByText('Acme Corp')).toBeTruthy());
+
+    // Expanded by default: nothing is hidden until the user folds it.
+    expect(
+      screen.getByTestId('credential-tok-1').props.accessibilityState.expanded,
+    ).toBe(true);
+
+    fireEvent.press(screen.getByTestId('credential-tok-1'));
+
+    expect(screen.queryByText('Acme Corp')).toBeNull();
+    expect(screen.queryByText('Side Project')).toBeNull();
+    // The credential itself and its summary stay visible while folded.
+    expect(screen.getByText('Ops token')).toBeTruthy();
+    expect(screen.getByText('API Token · 2 accounts')).toBeTruthy();
+    expect(
+      screen.getByTestId('credential-tok-1').props.accessibilityState.expanded,
+    ).toBe(false);
+
+    fireEvent.press(screen.getByTestId('credential-tok-1'));
+    expect(screen.getByText('Acme Corp')).toBeTruthy();
+  });
+
+  test('hides the disconnect action while folded', async () => {
+    jest.mocked(listConnections).mockResolvedValue([connection]);
+    wrap();
+    await waitFor(() =>
+      expect(screen.getByTestId('disconnect-tok-1')).toBeTruthy(),
+    );
+
+    fireEvent.press(screen.getByTestId('credential-tok-1'));
+
+    expect(screen.queryByTestId('disconnect-tok-1')).toBeNull();
+  });
+
+  test('disconnects from its own row, never from an account', async () => {
     jest.mocked(listConnections).mockResolvedValue([connection]);
     const alertSpy = jest
       .spyOn(Alert, 'alert')
@@ -135,10 +176,37 @@ describe('Settings tab', () => {
     wrap();
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeTruthy());
 
+    // Pressing an account must not remove the credential that covers others.
     fireEvent.press(screen.getByText('Acme Corp'));
+    expect(removeConnection).not.toHaveBeenCalled();
+
+    // Nor may folding the group be mistaken for removing it.
+    fireEvent.press(screen.getByTestId('credential-tok-1'));
+    expect(removeConnection).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByTestId('credential-tok-1'));
+
+    fireEvent.press(screen.getByTestId('disconnect-tok-1'));
 
     await waitFor(() =>
       expect(removeConnection).toHaveBeenCalledWith('tok-1'),
+    );
+    alertSpy.mockRestore();
+  });
+
+  test('warns that every covered account loses access', async () => {
+    jest.mocked(listConnections).mockResolvedValue([connection]);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    wrap();
+    await waitFor(() =>
+      expect(screen.getByTestId('disconnect-tok-1')).toBeTruthy(),
+    );
+
+    fireEvent.press(screen.getByTestId('disconnect-tok-1'));
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('All 2 accounts'),
+      expect.anything(),
     );
     alertSpy.mockRestore();
   });
@@ -152,14 +220,18 @@ describe('Settings tab', () => {
     await waitFor(() => expect(mockReportAccountError).toHaveBeenCalled());
   });
 
-  test('toggles the theme between dark and light', async () => {
+  test('switches the appearance preference', async () => {
     wrap();
-    const toggle = await screen.findByTestId('dark-appearance');
-    expect(toggle.props.value).toBe(true);
+    const light = await screen.findByTestId('appearance-light');
+    expect(
+      screen.getByTestId('appearance-system').props.accessibilityState.selected,
+    ).toBe(true);
 
-    fireEvent(toggle, 'valueChange', false);
+    fireEvent.press(light);
 
-    expect(screen.getByTestId('dark-appearance').props.value).toBe(false);
+    expect(
+      screen.getByTestId('appearance-light').props.accessibilityState.selected,
+    ).toBe(true);
   });
 
   test('persists the biometric preference', async () => {

@@ -1,6 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   RefreshControl,
@@ -27,6 +26,7 @@ import {
   ShieldAlert,
   Wifi,
   Zap,
+  type LucideIcon,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -35,8 +35,10 @@ import {
   fetchAnalyticsSnapshot,
   type AnalyticsSnapshot,
 } from '@/src/cloudflare/analytics';
+import { fetchComputeSnapshot } from '@/src/cloudflare/accountResources';
 import {
   fetchZonesSnapshot,
+  type AccountSummary,
   type ZonesSnapshot,
 } from '@/src/cloudflare/resources';
 import {
@@ -49,9 +51,15 @@ import {
   Pill,
   SectionLabel,
   type Status,
+  ScreenSkeleton,
 } from '@/src/components/ui';
 import { cloudflareErrorMessage } from '@/src/i18n/errors';
+import { useAccountScope } from '@/src/state/accountScope';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { CollapsibleTitleContainer, CompactHeader, useCollapsibleTitle } from '@/src/components/CollapsibleTitle';
+import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { haptics } from '@/src/utils/haptics';
 import { accent, foreground, label, tint } from '@/src/theme/tokens';
 import { compactNumber, formatBytes } from '@/src/utils/format';
 
@@ -70,13 +78,126 @@ function eventPillStatus(action: string): Status {
   return action === 'block' ? 'block' : 'log';
 }
 
+interface NavItem {
+  key: string;
+  title: string;
+  sub: string;
+  Icon: LucideIcon;
+  color: string;
+  onPress: () => void;
+}
+
+/** Icon + title + subtitle navigation row (quick access / management). */
+const NavRow = memo(function NavRow({
+  item,
+  last,
+  testID,
+}: {
+  item: NavItem;
+  last: boolean;
+  testID: string;
+}) {
+  const { mode, colors } = useTheme();
+  return (
+    <ListRow
+      last={last}
+      onPress={item.onPress}
+      testID={testID}
+      left={
+        <View style={styles.accountRow}>
+          <View
+            style={[
+              styles.quickIcon,
+              { backgroundColor: tint(item.color, '22') },
+            ]}
+          >
+            <item.Icon
+              accessibilityElementsHidden
+              color={item.color}
+              size={16}
+            />
+          </View>
+          <View style={styles.accountCopy}>
+            <Text style={[styles.accountName, { color: colors.text }]}>
+              {item.title}
+            </Text>
+            <Text style={[styles.accountSub, { color: label(mode, 0.45) }]}>
+              {item.sub}
+            </Text>
+          </View>
+        </View>
+      }
+    />
+  );
+});
+
+const AccountRow = memo(function AccountRow({
+  account,
+  color,
+  health,
+  plan,
+  requests,
+  last,
+  onSelect,
+}: {
+  account: AccountSummary;
+  color: string;
+  health: string;
+  plan: string | null;
+  requests: number | null;
+  last: boolean;
+  onSelect: (accountId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const { mode, colors } = useTheme();
+  const subParts = [
+    plan,
+    t('common.zoneCount', { count: account.zoneCount }),
+    requests !== null
+      ? t('home.requestsShort', { value: compactNumber(requests) })
+      : null,
+  ].filter(Boolean);
+  return (
+    <ListRow
+      last={last}
+      onPress={() => onSelect(account.id)}
+      right={
+        requests !== null ? (
+          <Text style={styles.accountRequests}>{compactNumber(requests)}</Text>
+        ) : undefined
+      }
+      left={
+        <View style={styles.accountRow}>
+          <AccountChip color={color} name={account.name} size={30} />
+          <View style={styles.accountCopy}>
+            <View style={styles.accountNameRow}>
+              <Text
+                numberOfLines={1}
+                style={[styles.accountName, { color: colors.text }]}
+              >
+                {account.name}
+              </Text>
+              <View style={[styles.accountDot, { backgroundColor: health }]} />
+            </View>
+            <Text style={[styles.accountSub, { color: label(mode, 0.4) }]}>
+              {subParts.join(' · ')}
+            </Text>
+          </View>
+        </View>
+      }
+    />
+  );
+});
+
 export default function Home() {
   const router = useRouter();
   const { t } = useTranslation();
   const { mode, colors } = useTheme();
+  const bottomInset = useTabBarInset();
+  const { scrollY, onScroll } = useCollapsibleTitle();
   const [snapshot, setSnapshot] = useState<ZonesSnapshot | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsSnapshot | null>(null);
-  const [scope, setScope] = useState<string | null>(null);
+  const { scope, setScope } = useAccountScope();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -84,8 +205,15 @@ export default function Home() {
     return fetchZonesSnapshot({ force })
       .then((zones) => {
         setSnapshot(zones);
-        // Analytics are best-effort and load after the zones list.
-        return fetchAnalyticsSnapshot(zones, { force })
+        if (!force) {
+          // Warm the compute snapshot cache in the background so the compute
+          // tab opens without a cold network wait. The shared TTL cache
+          // dedupes this with the tab's own fetch.
+          void fetchComputeSnapshot().catch(() => {});
+        }
+        // Analytics are best-effort and finish in the background: the
+        // pull-to-refresh spinner only waits for the zones list.
+        void fetchAnalyticsSnapshot(zones, { force })
           .then(setAnalytics)
           .catch(() => {});
       })
@@ -102,6 +230,7 @@ export default function Home() {
   );
 
   const refresh = () => {
+    haptics.tap();
     setRefreshing(true);
     void load(true).finally(() => setRefreshing(false));
   };
@@ -118,6 +247,159 @@ export default function Home() {
     return aggregateAnalytics(analytics, scope ?? undefined);
   }, [analytics, scope]);
 
+  /** Health color, plan and request totals per account, computed once. */
+  const accountMeta = useMemo(() => {
+    const meta = new Map<
+      string,
+      { health: string; plan: string | null; requests: number | null }
+    >();
+    if (!snapshot) {
+      return meta;
+    }
+    for (const account of snapshot.accounts) {
+      const zones = snapshot.zones.filter(
+        (zone) => zone.accountId === account.id,
+      );
+      meta.set(account.id, {
+        health:
+          zones.length === 0
+            ? accent.gray
+            : zones.every((zone) => zone.status === 'active' && !zone.paused)
+              ? accent.green
+              : accent.yellow,
+        plan: zones[0]?.plan ?? null,
+        requests: analytics?.available
+          ? aggregateAnalytics(analytics, account.id).requests
+          : null,
+      });
+    }
+    return meta;
+  }, [snapshot, analytics]);
+
+  const selectAccount = useCallback(
+    (accountId: string) => setScope(accountId),
+    [setScope],
+  );
+
+  const openScoped = useCallback(
+    (pathname: string) =>
+      router.push({
+        pathname,
+        params: scopedAccount
+          ? { accountId: scopedAccount.id, accountName: scopedAccount.name }
+          : {},
+      } as unknown as Href),
+    [router, scopedAccount],
+  );
+
+  const quickAccess = useMemo<NavItem[]>(
+    () => [
+      {
+        key: 'workers',
+        title: t('home.quickWorkers'),
+        sub: t('home.quickComputeSub'),
+        Icon: Zap,
+        color: accent.yellow,
+        onPress: () => router.push('/(tabs)/(compute)'),
+      },
+      {
+        key: 'dns',
+        title: t('home.quickDns'),
+        sub: t('home.quickZonesSub'),
+        Icon: Server,
+        color: accent.blue,
+        onPress: () => router.push('/(tabs)/(zones)'),
+      },
+      {
+        key: 'firewall',
+        title: t('home.quickFirewall'),
+        sub: t('home.quickFirewallSub', {
+          count: aggregate ? compactNumber(aggregate.threats) : '—',
+        }),
+        Icon: Shield,
+        color: accent.red,
+        onPress: () =>
+          router.push({
+            pathname: '/(tabs)/(home)/firewall',
+            params: scopedAccount ? { accountId: scopedAccount.id } : {},
+          } as unknown as Href),
+      },
+      {
+        key: 'underAttack',
+        title: t('home.quickUnderAttack'),
+        sub: t('home.quickUnderAttackSub'),
+        Icon: ShieldAlert,
+        color: accent.orange,
+        onPress: () =>
+          router.push({
+            pathname: '/(tabs)/(home)/under-attack',
+            params: scopedAccount ? { accountId: scopedAccount.id } : {},
+          } as unknown as Href),
+      },
+      {
+        key: 'analytics',
+        title: t('home.quickAnalytics'),
+        sub: t('home.quickAnalyticsSub'),
+        Icon: BarChart2,
+        color: accent.purple,
+        onPress: () =>
+          router.push({
+            pathname: '/(tabs)/(home)/analytics',
+            params: scopedAccount
+              ? { accountId: scopedAccount.id, accountName: scopedAccount.name }
+              : {},
+          } as unknown as Href),
+      },
+    ],
+    [t, router, aggregate, scopedAccount],
+  );
+
+  const management = useMemo<NavItem[]>(
+    () => [
+      {
+        key: 'alerts',
+        title: t('home.mgmtAlerts'),
+        sub: t('home.mgmtAlertsSub'),
+        Icon: Bell,
+        color: accent.red,
+        onPress: () => openScoped('/(tabs)/(home)/alerts'),
+      },
+      {
+        key: 'analytics',
+        title: t('home.mgmtAnalytics'),
+        sub: t('home.mgmtAnalyticsSub'),
+        Icon: Gauge,
+        color: accent.purple,
+        onPress: () => openScoped('/(tabs)/(home)/performance'),
+      },
+      {
+        key: 'lb',
+        title: t('home.mgmtLb'),
+        sub: t('home.mgmtLbSub'),
+        Icon: Wifi,
+        color: accent.blue,
+        onPress: () => openScoped('/(tabs)/(home)/lb'),
+      },
+      {
+        key: 'audit',
+        title: t('home.mgmtAudit'),
+        sub: t('home.mgmtAuditSub'),
+        Icon: FileText,
+        color: accent.gray,
+        onPress: () => openScoped('/(tabs)/(home)/audit'),
+      },
+      {
+        key: 'billing',
+        title: t('home.mgmtBilling'),
+        sub: t('home.mgmtBillingSub'),
+        Icon: DollarSign,
+        color: accent.green,
+        onPress: () => openScoped('/(tabs)/(home)/billing'),
+      },
+    ],
+    [t, openScoped],
+  );
+
   if (!snapshot) {
     return (
       <SafeAreaView
@@ -127,9 +409,7 @@ export default function Home() {
         <Text style={[styles.title, { color: colors.text }]}>
           {t('home.title')}
         </Text>
-        <View style={styles.loading}>
-          <ActivityIndicator color={accent.orange} />
-        </View>
+        <ScreenSkeleton testID="screen-skeleton" />
       </SafeAreaView>
     );
   }
@@ -167,143 +447,6 @@ export default function Home() {
     []
   ).slice(0, 3);
 
-  const accountHealth = (accountId: string): string => {
-    const zones = snapshot.zones.filter((zone) => zone.accountId === accountId);
-    if (zones.length === 0) {
-      return accent.gray;
-    }
-    return zones.every((zone) => zone.status === 'active' && !zone.paused)
-      ? accent.green
-      : accent.yellow;
-  };
-
-  const accountRequests = (accountId: string): number | null => {
-    if (!analytics?.available) {
-      return null;
-    }
-    return aggregateAnalytics(analytics, accountId).requests;
-  };
-
-  const accountPlan = (accountId: string): string | null =>
-    snapshot.zones.find((zone) => zone.accountId === accountId)?.plan ?? null;
-
-  const quickAccess = [
-    {
-      key: 'workers',
-      title: t('home.quickWorkers'),
-      sub: t('home.quickComputeSub'),
-      Icon: Zap,
-      color: accent.yellow,
-      onPress: () => router.push('/(tabs)/(compute)'),
-    },
-    {
-      key: 'dns',
-      title: t('home.quickDns'),
-      sub: t('home.quickZonesSub'),
-      Icon: Server,
-      color: accent.blue,
-      onPress: () => router.push('/(tabs)/(zones)'),
-    },
-    {
-      key: 'firewall',
-      title: t('home.quickFirewall'),
-      sub: aggregate
-        ? t('home.quickFirewallSub', { count: compactNumber(aggregate.threats) })
-        : t('home.quickFirewallSub', { count: '—' }),
-      Icon: Shield,
-      color: accent.red,
-      onPress: () =>
-        router.push({
-          pathname: '/(tabs)/(home)/firewall',
-          params: scopedAccount
-            ? { accountId: scopedAccount.id }
-            : {},
-        } as unknown as Href),
-    },
-    {
-      key: 'underAttack',
-      title: t('home.quickUnderAttack'),
-      sub: t('home.quickUnderAttackSub'),
-      Icon: ShieldAlert,
-      color: accent.orange,
-      onPress: () =>
-        router.push({
-          pathname: '/(tabs)/(home)/under-attack',
-          params: scopedAccount
-            ? { accountId: scopedAccount.id }
-            : {},
-        } as unknown as Href),
-    },
-    {
-      key: 'analytics',
-      title: t('home.quickAnalytics'),
-      sub: t('home.quickAnalyticsSub'),
-      Icon: BarChart2,
-      color: accent.purple,
-      onPress: () =>
-        router.push({
-          pathname: '/(tabs)/(home)/analytics',
-          params: scopedAccount
-            ? {
-                accountId: scopedAccount.id,
-                accountName: scopedAccount.name,
-              }
-            : {},
-        } as unknown as Href),
-    },
-  ];
-
-  const openScoped = (pathname: string) =>
-    router.push({
-      pathname,
-      params: scopedAccount
-        ? { accountId: scopedAccount.id, accountName: scopedAccount.name }
-        : {},
-    } as unknown as Href);
-
-  const management = [
-    {
-      key: 'alerts',
-      title: t('home.mgmtAlerts'),
-      sub: t('home.mgmtAlertsSub'),
-      Icon: Bell,
-      color: accent.red,
-      onPress: () => openScoped('/(tabs)/(home)/alerts'),
-    },
-    {
-      key: 'analytics',
-      title: t('home.mgmtAnalytics'),
-      sub: t('home.mgmtAnalyticsSub'),
-      Icon: Gauge,
-      color: accent.purple,
-      onPress: () => openScoped('/(tabs)/(home)/performance'),
-    },
-    {
-      key: 'lb',
-      title: t('home.mgmtLb'),
-      sub: t('home.mgmtLbSub'),
-      Icon: Wifi,
-      color: accent.blue,
-      onPress: () => openScoped('/(tabs)/(home)/lb'),
-    },
-    {
-      key: 'audit',
-      title: t('home.mgmtAudit'),
-      sub: t('home.mgmtAuditSub'),
-      Icon: FileText,
-      color: accent.gray,
-      onPress: () => openScoped('/(tabs)/(home)/audit'),
-    },
-    {
-      key: 'billing',
-      title: t('home.mgmtBilling'),
-      sub: t('home.mgmtBillingSub'),
-      Icon: DollarSign,
-      color: accent.green,
-      onPress: () => openScoped('/(tabs)/(home)/billing'),
-    },
-  ];
-
   return (
     <SafeAreaView
       edges={['top']}
@@ -336,8 +479,13 @@ export default function Home() {
         <ChevronsUpDown color={label(mode, 0.45)} size={14} />
       </Pressable>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
+      <CollapsibleTitleContainer>
+      <CompactHeader scrollY={scrollY} title={scopedAccount ? scopedAccount.name : t('home.title')} />
+      <Animated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        entering={FadeInDown.duration(260)}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomInset }]}
         refreshControl={
           <RefreshControl
             onRefresh={refresh}
@@ -353,7 +501,7 @@ export default function Home() {
         <Text style={[styles.subtitle, { color: label(mode, 0.5) }]}>
           {scopedAccount
             ? [
-                accountPlan(scopedAccount.id),
+                accountMeta.get(scopedAccount.id)?.plan ?? null,
                 t('common.zoneCount', { count: scopedZones.length }),
               ]
                 .filter(Boolean)
@@ -442,65 +590,17 @@ export default function Home() {
             <SectionLabel>{t('home.sectionAccounts')}</SectionLabel>
             <Card>
               {snapshot.accounts.map((account, index) => {
-                const requests = accountRequests(account.id);
-                const plan = accountPlan(account.id);
-                const subParts = [
-                  plan,
-                  t('common.zoneCount', { count: account.zoneCount }),
-                  requests !== null
-                    ? t('home.requestsShort', {
-                        value: compactNumber(requests),
-                      })
-                    : null,
-                ].filter(Boolean);
+                const meta = accountMeta.get(account.id);
                 return (
-                  <ListRow
+                  <AccountRow
                     key={account.id}
+                    account={account}
+                    color={chipColors[index % chipColors.length]}
+                    health={meta?.health ?? accent.gray}
+                    plan={meta?.plan ?? null}
+                    requests={meta?.requests ?? null}
                     last={index === snapshot.accounts.length - 1}
-                    onPress={() => setScope(account.id)}
-                    right={
-                      requests !== null ? (
-                        <Text style={styles.accountRequests}>
-                          {compactNumber(requests)}
-                        </Text>
-                      ) : undefined
-                    }
-                    left={
-                      <View style={styles.accountRow}>
-                        <AccountChip
-                          color={chipColors[index % chipColors.length]}
-                          name={account.name}
-                          size={30}
-                        />
-                        <View style={styles.accountCopy}>
-                          <View style={styles.accountNameRow}>
-                            <Text
-                              numberOfLines={1}
-                              style={[
-                                styles.accountName,
-                                { color: colors.text },
-                              ]}
-                            >
-                              {account.name}
-                            </Text>
-                            <View
-                              style={[
-                                styles.accountDot,
-                                { backgroundColor: accountHealth(account.id) },
-                              ]}
-                            />
-                          </View>
-                          <Text
-                            style={[
-                              styles.accountSub,
-                              { color: label(mode, 0.4) },
-                            ]}
-                          >
-                            {subParts.join(' · ')}
-                          </Text>
-                        </View>
-                      </View>
-                    }
+                    onSelect={selectAccount}
                   />
                 );
               })}
@@ -525,37 +625,11 @@ export default function Home() {
         <SectionLabel>{t('home.sectionQuickAccess')}</SectionLabel>
         <Card>
           {quickAccess.map((item, index) => (
-            <ListRow
+            <NavRow
               key={item.key}
+              item={item}
               last={index === quickAccess.length - 1}
-              onPress={item.onPress}
               testID={`home-quick-${item.key}`}
-              left={
-                <View style={styles.accountRow}>
-                  <View
-                    style={[
-                      styles.quickIcon,
-                      { backgroundColor: tint(item.color, '22') },
-                    ]}
-                  >
-                    <item.Icon
-                      accessibilityElementsHidden
-                      color={item.color}
-                      size={16}
-                    />
-                  </View>
-                  <View style={styles.accountCopy}>
-                    <Text style={[styles.accountName, { color: colors.text }]}>
-                      {item.title}
-                    </Text>
-                    <Text
-                      style={[styles.accountSub, { color: label(mode, 0.45) }]}
-                    >
-                      {item.sub}
-                    </Text>
-                  </View>
-                </View>
-              }
             />
           ))}
         </Card>
@@ -563,37 +637,11 @@ export default function Home() {
         <SectionLabel>{t('home.sectionManagement')}</SectionLabel>
         <Card>
           {management.map((item, index) => (
-            <ListRow
+            <NavRow
               key={item.key}
+              item={item}
               last={index === management.length - 1}
-              onPress={'onPress' in item ? item.onPress : undefined}
               testID={`home-mgmt-${item.key}`}
-              left={
-                <View style={styles.accountRow}>
-                  <View
-                    style={[
-                      styles.quickIcon,
-                      { backgroundColor: tint(item.color, '22') },
-                    ]}
-                  >
-                    <item.Icon
-                      accessibilityElementsHidden
-                      color={item.color}
-                      size={16}
-                    />
-                  </View>
-                  <View style={styles.accountCopy}>
-                    <Text style={[styles.accountName, { color: colors.text }]}>
-                      {item.title}
-                    </Text>
-                    <Text
-                      style={[styles.accountSub, { color: label(mode, 0.45) }]}
-                    >
-                      {item.sub}
-                    </Text>
-                  </View>
-                </View>
-              }
             />
           ))}
         </Card>
@@ -679,7 +727,8 @@ export default function Home() {
             </Card>
           </>
         ) : null}
-      </ScrollView>
+      </Animated.ScrollView>
+      </CollapsibleTitleContainer>
 
       <Modal
         animationType="slide"
@@ -885,18 +934,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  content: {
-    paddingBottom: 32,
-  },
+  content: {},
   issue: {
     fontSize: 13,
     marginTop: 6,
     paddingHorizontal: 20,
-  },
-  loading: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
   },
   quickIcon: {
     alignItems: 'center',

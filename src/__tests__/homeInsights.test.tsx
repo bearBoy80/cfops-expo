@@ -150,7 +150,7 @@ test('home firewall shows blocked totals and live events', async () => {
 test('home analytics shows request volume and breakdown', async () => {
   wrap(<HomeAnalytics />);
   await waitFor(() => expect(screen.getByText('1.2M')).toBeTruthy());
-  expect(screen.getByText('42.0K')).toBeTruthy();
+  expect(screen.getByText('42K')).toBeTruthy();
   expect(screen.getByText('82%')).toBeTruthy();
   expect(screen.getByText('1.8K')).toBeTruthy();
 });
@@ -162,9 +162,9 @@ test('home performance lists per-zone cache and bandwidth', async () => {
   );
   expect(screen.getByText('Traffic & Performance')).toBeTruthy();
   expect(screen.getByText('acme.com')).toBeTruthy();
-  expect(screen.getByText('42.0K visits (24h)')).toBeTruthy();
+  expect(screen.getByText('42K visits (24h)')).toBeTruthy();
   expect(screen.queryByText('88.0K unique visitors today')).toBeNull();
-  expect(screen.getAllByText('48.0K').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('48K').length).toBeGreaterThan(0);
   expect(screen.getAllByText('1.2M').length).toBeGreaterThan(0);
   expect(screen.getAllByText('82%').length).toBeGreaterThan(0);
   expect(screen.getAllByText('977 KB').length).toBeGreaterThan(0);
@@ -176,6 +176,7 @@ test('home performance lists per-zone cache and bandwidth', async () => {
       zoneId: 'zone-1',
       connectionId: 'tok-1',
       name: 'acme.com',
+      visits: '42000',
     },
   });
 });
@@ -414,6 +415,51 @@ test('home billing shows subscription totals', async () => {
   expect(screen.getByText('Free')).toBeTruthy();
   expect(screen.getByText('Estimated total')).toBeTruthy();
   expect(screen.queryByText('Acme Corp')).toBeNull();
+});
+
+test('home billing explains that billing has no OAuth scope', async () => {
+  jest.mocked(fetchBillingSnapshot).mockResolvedValue({
+    subscriptions: [],
+    issues: [
+      {
+        connectionId: 'oauth-1',
+        label: 'Acme Corp',
+        cause: new CloudflareApiError('forbidden'),
+      },
+    ],
+  });
+
+  wrap(<HomeBilling />);
+
+  await waitFor(() =>
+    expect(
+      screen.getByText(/Account · Billing · Read permission/),
+    ).toBeTruthy(),
+  );
+  // The generic advice is actionable for API tokens only, so it must not be
+  // the message shown here.
+  expect(
+    screen.queryByText(/Add the missing permission to the token/),
+  ).toBeNull();
+});
+
+test('home billing still surfaces non-permission failures', async () => {
+  jest.mocked(fetchBillingSnapshot).mockResolvedValue({
+    subscriptions: [],
+    issues: [
+      {
+        connectionId: 'tok-1',
+        label: 'Acme Corp',
+        cause: new CloudflareApiError('network'),
+      },
+    ],
+  });
+
+  wrap(<HomeBilling />);
+
+  await waitFor(() =>
+    expect(screen.getByText(/Could not reach Cloudflare/)).toBeTruthy(),
+  );
 });
 
 const { showActionMenu } = jest.requireMock<{

@@ -15,6 +15,7 @@ jest.mock('../api', () => ({
   listAccounts: jest.fn(),
 }));
 
+import * as SecureStore from 'expo-secure-store';
 import { listAccounts, verifyToken } from '../api';
 import {
   addConnection,
@@ -23,11 +24,13 @@ import {
   getConnectionToken,
   listConnections,
   removeConnection,
+  resetConnectionsCache,
 } from '../connections';
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockStore.clear();
+  resetConnectionsCache();
   jest
     .mocked(verifyToken)
     .mockResolvedValue({ id: 'tok-1', status: 'active' });
@@ -86,6 +89,50 @@ test('removes the connection and its token', async () => {
 test('treats corrupt metadata as empty', async () => {
   mockStore.set('cf-connections-v1', 'not-json');
 
+  await expect(listConnections()).resolves.toEqual([]);
+});
+
+test('does not pin a transient empty keychain read', async () => {
+  // First read races the lock state and sees nothing.
+  await expect(listConnections()).resolves.toEqual([]);
+
+  // The keychain becomes readable again; the empty result must not stick.
+  mockStore.set(
+    'cf-connections-v1',
+    JSON.stringify([
+      { id: 'tok-1', label: 'Acme', accounts: [], createdAt: 1 },
+    ]),
+  );
+  await expect(listConnections()).resolves.toHaveLength(1);
+});
+
+test('serves repeated list calls from memory after one keychain read', async () => {
+  mockStore.set(
+    'cf-connections-v1',
+    JSON.stringify([
+      { id: 'tok-1', label: 'Acme', accounts: [], createdAt: 1 },
+    ]),
+  );
+
+  await listConnections();
+  await listConnections();
+
+  expect(jest.mocked(SecureStore.getItemAsync)).toHaveBeenCalledTimes(1);
+});
+
+test('mutations keep the memory cache in sync', async () => {
+  await addConnection('secret-token');
+  jest.mocked(SecureStore.getItemAsync).mockClear();
+
+  // Served from the cache updated by the write.
+  await expect(listConnections()).resolves.toHaveLength(1);
+  expect(jest.mocked(SecureStore.getItemAsync)).not.toHaveBeenCalledWith(
+    'cf-connections-v1',
+  );
+
+  // Removing the last connection empties the cache; empty lists are never
+  // trusted from memory, so the next call re-reads the keychain.
+  await removeConnection('tok-1');
   await expect(listConnections()).resolves.toEqual([]);
 });
 

@@ -10,6 +10,7 @@ import {
   type AppLanguage,
 } from '@/src/i18n';
 import { Card, ListRow } from '@/src/components/ui';
+import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { accent, label } from '@/src/theme/tokens';
 
@@ -19,6 +20,7 @@ export default function LanguageScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { mode, colors } = useTheme();
+  const bottomInset = useTabBarInset();
   const [selected, setSelected] = useState<AppLanguage | null>(null);
 
   useEffect(() => {
@@ -49,7 +51,7 @@ export default function LanguageScreen() {
       style={[styles.safeArea, { backgroundColor: colors.bg }]}
     >
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomInset }]}
         showsVerticalScrollIndicator={false}
       >
         <Pressable
@@ -120,9 +122,7 @@ const styles = StyleSheet.create({
     color: accent.orange,
     fontSize: 17,
   },
-  content: {
-    paddingBottom: 24,
-  },
+  content: {},
   optionCopy: {
     flex: 1,
   },

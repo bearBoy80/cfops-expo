@@ -1,6 +1,7 @@
 import {
   fetchComputeSnapshot,
   fetchStorageSnapshot,
+  getAccountBearer,
   invalidateComputeSnapshot,
   invalidateStorageSnapshot,
 } from '../accountResources';
@@ -193,5 +194,45 @@ test('aggregates compute resources across accounts', async () => {
     name: 'marketing-site',
     deployStatus: 'success',
     accountId: 'acc-1',
+  });
+});
+
+test('storage and compute snapshots share one credential resolution', async () => {
+  jest.mocked(listConnections).mockResolvedValue([
+    connection('tok-1', [{ id: 'acc-1', name: 'Acme Corp' }]),
+  ]);
+
+  await fetchStorageSnapshot({ force: true });
+  await fetchComputeSnapshot({ force: true });
+
+  expect(listConnections).toHaveBeenCalledTimes(1);
+  expect(getConnectionBearer).toHaveBeenCalledTimes(1);
+});
+
+test('issues recorded by one snapshot do not leak into the other', async () => {
+  jest.mocked(listConnections).mockResolvedValue([
+    connection('tok-1', [{ id: 'acc-1', name: 'Acme Corp' }]),
+  ]);
+  jest.mocked(listWorkerScripts).mockRejectedValue(new Error('denied'));
+
+  const compute = await fetchComputeSnapshot({ force: true });
+  const storage = await fetchStorageSnapshot({ force: true });
+
+  expect(compute.issues).toHaveLength(1);
+  expect(storage.issues).toEqual([]);
+});
+
+test('getAccountBearer serves bearers from the shared resolution', async () => {
+  jest.mocked(listConnections).mockResolvedValue([
+    connection('tok-1', [{ id: 'acc-1', name: 'Acme Corp' }]),
+  ]);
+
+  await fetchComputeSnapshot({ force: true });
+  await expect(getAccountBearer('acc-1')).resolves.toBe('bearer-1');
+
+  // The snapshot already resolved credentials; no second keychain pass.
+  expect(listConnections).toHaveBeenCalledTimes(1);
+  await expect(getAccountBearer('acc-unknown')).rejects.toMatchObject({
+    code: 'missing-credential',
   });
 });
