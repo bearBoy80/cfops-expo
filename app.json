@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "cloudflareOps",
-    "slug": "cloudflareops",
+    "name": "Opsflare",
+    "slug": "opsflare",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -9,7 +9,11 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.cloudflareops.app",
-      "icon": "./assets/expo.icon"
+      "appleTeamId": "R24C9LCV3S",
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.cloudflareops.app",
@@ -19,7 +23,11 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "output": "static",
@@ -30,7 +38,7 @@
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Allow cloudflareOps to use Face ID to unlock your local app account."
+          "faceIDPermission": "Allow Opsflare to use Face ID to unlock your local app account."
         }
       ],
       [
@@ -58,7 +66,12 @@
         "clientId": "d3bc3dfca1276d0d5ed8f2a6fb148473",
         "redirectUri": "https://cfops-oauth-relay.aiall.workers.dev/callback",
         "scopes": []
+      },
+      "router": {},
+      "eas": {
+        "projectId": "1e04d0bf-490e-4841-a4d7-0d7974ed33bc"
       }
-    }
+    },
+    "owner": "jackmatt"
   }
 }

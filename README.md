@@ -1,4 +1,4 @@
-# cloudflareOps
+# Opsflare
 
 Cloudflare multi-account mobile client built with Expo and React Native for
 iOS and Android. The current foundation milestone provides a themed five-tab

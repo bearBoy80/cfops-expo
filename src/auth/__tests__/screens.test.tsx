@@ -794,7 +794,7 @@ test('starts successful biometric authentication only after a user tap', async (
     expect.objectContaining({
       biometricsSecurityLevel: 'strong',
       disableDeviceFallback: true,
-      promptMessage: 'Unlock cloudflareOps',
+      promptMessage: 'Unlock Opsflare',
     }),
   );
 });

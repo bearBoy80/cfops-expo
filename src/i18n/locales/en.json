@@ -71,7 +71,7 @@
     "authenticating": "Authenticating…",
     "useBiometrics": "Use Face ID / fingerprint",
     "usePassword": "Use password",
-    "prompt": "Unlock cloudflareOps",
+    "prompt": "Unlock Opsflare",
     "biometricUnavailableDevice": "Biometric authentication is not available on this device. Use your password.",
     "biometricNotEnrolled": "Set up Face ID or fingerprint in device settings, then try again.",
     "biometricNotRecognized": "Face ID or fingerprint was not recognized. Try again or use your password.",

@@ -69,7 +69,7 @@
     "authenticating": "验证中…",
     "useBiometrics": "使用面容 ID / 指纹",
     "usePassword": "使用密码",
-    "prompt": "解锁 cloudflareOps",
+    "prompt": "解锁 Opsflare",
     "biometricUnavailableDevice": "此设备不支持生物识别验证，请使用密码。",
     "biometricNotEnrolled": "请先在系统设置中录入面容 ID 或指纹，然后重试。",
     "biometricNotRecognized": "面容 ID 或指纹未能识别，请重试或使用密码。",
