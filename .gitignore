@@ -24,6 +24,9 @@ expo-env.d.ts
 # Metro
 .metro-health-check*
 
+# icon QA sheets, regenerate with `npm run icons -- --preview`
+scripts/.preview/
+
 # Wrangler
 .wrangler/
 
