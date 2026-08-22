@@ -18,11 +18,11 @@ todos:
     content: "Phase 0: 595/574 个键转成 574 个 String Catalog 键(21 个复数、7 个位置化参数、0 个未翻译)，由 Scripts/generate-xcstrings.py 生成并有 bundle 级测试守护"
     status: completed
   - id: ops-shared-models
-    content: "Phase 0: OpsSharedModels 提供 App Group DTO(WidgetSummary/EntityCatalog)、原子读写、格式化与审计展示工具；不含任何安全代码，供 Widget 链接"
+    content: "Phase 0: OpsSharedModels 提供 App Group DTO(WidgetSummary/EntityCatalog)、原子读写、格式化与审计展示工具，以及不含安全代码的并发工具(mapLimit / actor 版 TTLCache)；供 Widget 链接"
     status: completed
   - id: ops-security
-    content: "Phase 0: OpsSecurity 补齐版本化口令记录、LAContext 与 TTLCache/并发工具(Keychain 封装与遗留清除已完成)；仅 App target 链接"
-    status: pending
+    content: "Phase 0: OpsSecurity 补齐版本化口令记录(PBKDF2 + 参数持久化 + 常数时间比较 + 成本校准 + 解锁后升级)、解锁失败节流、LAContext 封装与 ReauthenticationProof；仅 App target 链接"
+    status: completed
   - id: cf-rest
     content: "Phase 1: URLSession REST 管线、错误映射、分页、ReplayPolicy、12 个资源模块和 71 个导出函数"
     status: pending
@@ -118,7 +118,7 @@ isProject: false
 ## 已确定范围
 
 - 只做 iOS，最低 iOS 18，Swift 6 严格并发
-- 新仓库为opsflare-ios，与 cfops-expo下面一个子目录；旧仓库仅作为行为规格和测试参考；旧仓库仅作为行为规格和测试参考
+- 新仓库 `opsflare-ios` 是旧 Expo 仓库目录下的独立 git 仓库；旧仓库仅作为行为规格和测试参考
 - 沿用 bundle ID `com.cloudflareops.app`，保留 App Store 身份；首次启动一次性清除 Expo 版遗留 Keychain 条目
 - 不兼容旧 App 的本地账户数据，用户升级后需重新创建本地账户并重新连接 Cloudflare
 - 网络使用 `URLSession` + async/await + `Codable`，不引入第三方 HTTP 框架
@@ -142,7 +142,7 @@ isProject: false
 
 ## 目标结构
 
-仓库根：`/Users/jt.gui/workspace/opsflare-ios`（已创建，含 git、`.gitignore`、`README.md`、`AGENTS.md` 与下列目录骨架）。
+仓库根：`/Users/jt.gui/workspace/expo/cloudflareOps/opsflare-ios`（已创建，含独立 git、`.gitignore`、`README.md`、`AGENTS.md` 与下列目录骨架）。它是旧 Expo 仓库下的一个独立仓库，不纳入旧仓库的版本控制。
 
 ```text
 opsflare-ios/
@@ -249,7 +249,11 @@ for service in ["app", "app:auth", "app:no-auth"] {
 - output length
 - verifier
 
-PBKDF2 成本在最低支持设备上校准到可接受的交互延迟，参数随记录持久化；成功解锁后可升级旧参数。比较采用常数时间实现，并增加失败尝试节流。
+PBKDF2 成本用 `CCCalibratePBKDF` 在真机上按目标交互延迟校准，再夹在策略上下界之间（下界取 OWASP 对 PBKDF2-HMAC-SHA256 的 600k）；参数随记录持久化，成功解锁后按当前策略重写旧记录。比较采用常数时间实现。`kdf`/`prf` 用 raw-value 枚举，未来版本写的记录会解码失败而不是被按今天的算法重新解释——后者会拒绝正确口令，表现得像数据损坏。
+
+失败尝试节流是纯值类型状态机（注入时钟，可 Codable 持久化）：前 5 次免费，之后 15/60/300/900 秒逐级递增。墙钟不可信，把设备时间往前调可以跳过一次窗口，因此耐久的是失败计数而不是截止时间——跳过一次仍会落到更长的下一级。
+
+启用生物识别前的重认证用 `ReauthenticationProof` 表达：这个类型只能由本模块的口令校验或系统认证铸造，不可 Codable、不可 Equatable，且带过期窗口。Phase 2 的设置页想启用生物识别就必须拿到它，编译器会要求这个参数，而不是靠评审发现它缺失。
 
 ## 多账号与凭据路由
 
@@ -583,6 +587,8 @@ Lottie 仅用于引导、空态、解锁成功、Under Attack 状态、清缓存
 - Widget target 的依赖声明里没有 `CloudflareKit` 与 `OpsSecurity`，且无 Keychain Sharing entitlement
 - 复合资源 ID 有单测
 - 遗留 Keychain 清除有单测：三个旧 service 清空，新 service 条目保留
+- 口令记录有 PBKDF2 已知答案向量、逐参数敏感性、未知算法拒绝解码和升级路径单测
+- 节流、LAContext 错误映射（取消静默 vs 不匹配上报）和 TTL 缓存的 in-flight 去重有单测
 - String Catalog 有 574 个键，其中 21 个复数键、7 个位置化参数键、0 个未翻译；zh-Hans 的复数键只有 `other` 变体
 
 ### Phase 1：Network

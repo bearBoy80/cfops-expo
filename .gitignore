@@ -3,6 +3,9 @@
 .worktrees/
 .superpowers/
 
+# SwiftUI rewrite lives in its own git repo
+opsflare-ios/
+
 # dependencies
 node_modules/
 
