@@ -847,6 +847,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.6,
+    lineHeight: 15,
     textTransform: 'uppercase',
   },
   accountBarCopy: {
@@ -855,6 +856,7 @@ const styles = StyleSheet.create({
   },
   accountBarCount: {
     ...fontFace('subhead'),
+    flexShrink: 0,
   },
   accountBarIcon: {
     alignItems: 'center',
@@ -866,6 +868,7 @@ const styles = StyleSheet.create({
   },
   accountBarName: {
     ...fontFace('headline'),
+    lineHeight: 22,
   },
   accountCopy: {
     flex: 1,

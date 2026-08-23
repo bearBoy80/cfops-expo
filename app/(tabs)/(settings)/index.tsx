@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  Linking,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   ChevronDown,
@@ -53,9 +47,6 @@ import { accent, fontFace, label, tint } from '@/src/theme/tokens';
 import { haptics } from '@/src/utils/haptics';
 
 const chipColors = [accent.orange, accent.blue, accent.green, accent.red];
-
-const PRIVACY_URL = 'https://www.cloudflare.com/privacypolicy/';
-const TERMS_URL = 'https://www.cloudflare.com/website-terms/';
 
 interface Profile {
   name: string;
@@ -529,7 +520,7 @@ export default function SettingsScreen() {
             }
           />
           <ListRow
-            onPress={() => void Linking.openURL(PRIVACY_URL)}
+            onPress={() => router.push('/privacy')}
             testID="privacy-policy-row"
             left={
               <View style={styles.languageRow}>
@@ -553,7 +544,7 @@ export default function SettingsScreen() {
           />
           <ListRow
             last
-            onPress={() => void Linking.openURL(TERMS_URL)}
+            onPress={() => router.push('/terms')}
             testID="terms-row"
             left={
               <View style={styles.languageRow}>

@@ -82,12 +82,18 @@ test('an unknown stored value resolves to system', async () => {
   await expect(i18n.getStoredLanguage()).resolves.toBe('system');
 });
 
-type Resource = { [key: string]: string | Resource };
+type Resource = { [key: string]: string | Resource | Resource[] };
 
 const flatten = (resource: Resource, prefix = ''): string[] =>
   Object.entries(resource).flatMap(([key, value]) => {
     const path = prefix ? `${prefix}.${key}` : key;
-    return typeof value === 'string' ? [path] : flatten(value, path);
+    if (typeof value === 'string') {
+      return [path];
+    }
+    if (Array.isArray(value)) {
+      return value.flatMap((item, index) => flatten(item, `${path}.${index}`));
+    }
+    return flatten(value, path);
   });
 
 const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;

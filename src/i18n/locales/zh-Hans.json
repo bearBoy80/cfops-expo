@@ -84,7 +84,7 @@
     "loadingA11y": "正在加载引导进度",
     "stepA11y": "引导步骤，第 {{current}} 步，共 {{total}} 步",
     "welcome": {
-      "title": "Cloudflare 控制台",
+      "title": "Opsflare",
       "subtitle": "在一个地方管理你运营的所有 Cloudflare 账号——域名、Workers、存储与安全，尽在一个全局视图。",
       "feature1": "创建团队的控制台账户",
       "feature2": "绑定多个 Cloudflare 账号",
@@ -339,7 +339,7 @@
     "dataPrivacySub": "凭证经加密后仅保存在本机设备上。",
     "privacyPolicy": "隐私政策",
     "termsOfService": "服务条款",
-    "footer": "Cloudflare 控制台 · v{{version}}",
+    "footer": "Opsflare · v{{version}}",
     "disconnectTitle": "解绑账号",
     "credentialAccounts_other": "{{count}} 个账号",
     "disconnectCredential": "解绑此凭据",
@@ -354,6 +354,60 @@
     "systemDetail": "跟随设备语言",
     "en": "English",
     "zh-Hans": "简体中文"
+  },
+  "privacy": {
+    "title": "隐私政策",
+    "updated": "最后更新：2026 年 8 月",
+    "intro": "Opsflare 是一款用于管理你所运营的 Cloudflare 账户的客户端应用。本政策说明应用如何处理你的数据。",
+    "sections": [
+      {
+        "heading": "仅本地存储",
+        "body": "你的 Cloudflare API 令牌和账户凭据通过系统安全存储在本设备上加密保存。Opsflare 没有自己的服务器，因此你的凭据不会被上传到任何地方。"
+      },
+      {
+        "heading": "数据的使用方式",
+        "body": "凭据仅用于在你的设备上直接代表你调用 Cloudflare API。请求会直接发送至 Cloudflare——不经过任何代理或中间方。"
+      },
+      {
+        "heading": "无追踪",
+        "body": "Opsflare 不包含任何分析、广告或第三方追踪 SDK。我们不收集使用数据或个人信息。"
+      },
+      {
+        "heading": "删除你的数据",
+        "body": "你可以随时在「设置 → 已连接账户」中断开任意账户。断开后，存储在本设备上的凭据会立即被移除。"
+      },
+      {
+        "heading": "第三方服务",
+        "body": "使用本应用时，你的设备会直接与 Cloudflare API 通信，该通信受 Cloudflare 自身的隐私政策约束。"
+      }
+    ]
+  },
+  "terms": {
+    "title": "服务条款",
+    "updated": "最后更新：2026 年 8 月",
+    "intro": "使用 Opsflare 即表示你同意以下条款。",
+    "sections": [
+      {
+        "heading": "可接受的使用",
+        "body": "Opsflare 用于帮助你管理你有权访问的 Cloudflare 账户。请仅在使用你拥有或获授权的凭据时使用本应用。"
+      },
+      {
+        "heading": "你的责任",
+        "body": "你需负责保障设备安全，并对通过本应用使用你的凭据所执行的任何操作负责。你所做的更改会直接作用于你正在使用的 Cloudflare 账户。"
+      },
+      {
+        "heading": "不提供担保",
+        "body": "本应用按「现状」提供，不附带任何形式的担保。我们不保证其运行不中断或无差错。"
+      },
+      {
+        "heading": "责任限制",
+        "body": "在法律允许的最大范围内，Opsflare 不对因你使用本应用而产生的任何损失或损害承担责任。"
+      },
+      {
+        "heading": "条款变更",
+        "body": "我们可能会不时更新这些条款。条款变更生效后你继续使用本应用，即视为接受更新后的条款。"
+      }
+    ]
   },
   "connect": {
     "title": "绑定账号",

@@ -86,7 +86,7 @@
     "loadingA11y": "Loading onboarding progress",
     "stepA11y": "Onboarding step {{current}} of {{total}}",
     "welcome": {
-      "title": "Cloudflare Console",
+      "title": "Opsflare",
       "subtitle": "One place to manage every Cloudflare account you operate — zones, Workers, storage and security, all in a single global view.",
       "feature1": "Create your team's console account",
       "feature2": "Bind multiple Cloudflare accounts",
@@ -344,7 +344,7 @@
     "dataPrivacySub": "Credentials are encrypted and stored only on this device.",
     "privacyPolicy": "Privacy Policy",
     "termsOfService": "Terms of Service",
-    "footer": "Cloudflare Console · v{{version}}",
+    "footer": "Opsflare · v{{version}}",
     "disconnectTitle": "Disconnect Account",
     "credentialAccounts_one": "{{count}} account",
     "credentialAccounts_other": "{{count}} accounts",
@@ -360,6 +360,60 @@
     "systemDetail": "Follow the device language",
     "en": "English",
     "zh-Hans": "简体中文"
+  },
+  "privacy": {
+    "title": "Privacy Policy",
+    "updated": "Last updated: August 2026",
+    "intro": "Opsflare is a client app for managing the Cloudflare accounts you operate. This policy explains how the app handles your data.",
+    "sections": [
+      {
+        "heading": "Local-only storage",
+        "body": "Your Cloudflare API tokens and account credentials are encrypted and stored only on this device using the system secure store. Opsflare has no servers of its own, so your credentials are never uploaded anywhere."
+      },
+      {
+        "heading": "How your data is used",
+        "body": "Credentials are used solely to call the Cloudflare API on your behalf, directly from your device. Requests go straight to Cloudflare — no proxy or intermediary receives your data."
+      },
+      {
+        "heading": "No tracking",
+        "body": "Opsflare includes no analytics, advertising, or third-party tracking SDKs. We do not collect usage data or personal information."
+      },
+      {
+        "heading": "Removing your data",
+        "body": "You can disconnect any account at any time from Settings → Connected Accounts. Disconnecting removes the stored credential from this device immediately."
+      },
+      {
+        "heading": "Third-party services",
+        "body": "When you use the app, your device communicates directly with Cloudflare's API, which is governed by Cloudflare's own privacy policy."
+      }
+    ]
+  },
+  "terms": {
+    "title": "Terms of Service",
+    "updated": "Last updated: August 2026",
+    "intro": "By using Opsflare you agree to these terms.",
+    "sections": [
+      {
+        "heading": "Acceptable use",
+        "body": "Opsflare helps you manage Cloudflare accounts you are authorized to access. Use it only with credentials you own or are permitted to use."
+      },
+      {
+        "heading": "Your responsibilities",
+        "body": "You are responsible for keeping your device secure and for any actions taken through the app with your credentials. Changes you make apply directly to your live Cloudflare account."
+      },
+      {
+        "heading": "No warranty",
+        "body": "The app is provided \"as is\", without warranties of any kind. We do not guarantee that it will be uninterrupted or error-free."
+      },
+      {
+        "heading": "Limitation of liability",
+        "body": "To the maximum extent permitted by law, Opsflare is not liable for any loss or damage arising from your use of the app."
+      },
+      {
+        "heading": "Changes to these terms",
+        "body": "We may update these terms from time to time. Continued use of the app after changes take effect constitutes acceptance of the updated terms."
+      }
+    ]
   },
   "connect": {
     "title": "Connect Account",
