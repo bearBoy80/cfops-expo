@@ -134,8 +134,11 @@ export default function PagesProjectDetail() {
 
   /** Re-reads the project blocks after a deployment or setting change. */
   const reload = useCallback(
-    (resolved: string) => sequence((ifCurrent) => load(resolved, ifCurrent)),
-    [load, sequence],
+    () =>
+      sequence(async (ifCurrent) =>
+        load(await getBearerForConnection(params.connectionId), ifCurrent),
+      ),
+    [load, params.connectionId, sequence],
   );
 
   const refresh = useCallback(
@@ -177,16 +180,17 @@ export default function PagesProjectDetail() {
     }
 
     const run = (
-      action: Promise<void>,
+      action: (resolved: string) => Promise<void>,
       doneMessage: string,
     ) => {
       setBusy(true);
-      void action
+      void getBearerForConnection(params.connectionId)
+        .then(action)
         .then(async () => {
           // The list row shows the latest deployment status and commit.
           invalidateComputeSnapshot();
           showToast(doneMessage);
-          await reload(bearer);
+          await reload();
         })
         .catch((cause) => {
           showToast(cloudflareErrorMessage(cause), 'error');
@@ -207,12 +211,13 @@ export default function PagesProjectDetail() {
                 label: t('compute.retry'),
                 onPress: () =>
                   run(
-                    retryPagesDeployment(
-                      bearer,
-                      params.accountId,
-                      params.project,
-                      deployment.id,
-                    ),
+                    (resolved) =>
+                      retryPagesDeployment(
+                        resolved,
+                        params.accountId,
+                        params.project,
+                        deployment.id,
+                      ),
                     t('compute.retryDone'),
                   ),
               },
@@ -225,12 +230,13 @@ export default function PagesProjectDetail() {
                 destructive: true,
                 onPress: () =>
                   run(
-                    rollbackPagesDeployment(
-                      bearer,
-                      params.accountId,
-                      params.project,
-                      deployment.id,
-                    ),
+                    (resolved) =>
+                      rollbackPagesDeployment(
+                        resolved,
+                        params.accountId,
+                        params.project,
+                        deployment.id,
+                      ),
                     t('compute.rollbackDone'),
                   ),
               },
@@ -248,7 +254,10 @@ export default function PagesProjectDetail() {
     const next = enabled ? 'all' : 'none';
     setPreviewSetting(next);
     setBusy(true);
-    void setPagesPreviewSetting(bearer, params.accountId, params.project, next)
+    void getBearerForConnection(params.connectionId)
+      .then((resolved) =>
+        setPagesPreviewSetting(resolved, params.accountId, params.project, next),
+      )
       .then(() => {
         showToast(t('compute.settingSaved'));
       })
@@ -269,13 +278,16 @@ export default function PagesProjectDetail() {
       return;
     }
     setBusy(true);
-    void addPagesDomain(bearer, params.accountId, params.project, name)
+    void getBearerForConnection(params.connectionId)
+      .then((resolved) =>
+        addPagesDomain(resolved, params.accountId, params.project, name),
+      )
       .then(async () => {
         // The list row shows the primary domain, i.e. the first of domains.
         invalidateComputeSnapshot();
         setDomainSheet(null);
         showToast(t('compute.domainAdded'));
-        await reload(bearer);
+        await reload();
       })
       .catch((cause) => {
         // Toasts render below RN modals, so surface the failure inline.
@@ -298,16 +310,19 @@ export default function PagesProjectDetail() {
           destructive: true,
           onPress: () => {
             setBusy(true);
-            void deletePagesDomain(
-              bearer,
-              params.accountId,
-              params.project,
-              domain.name,
-            )
+            void getBearerForConnection(params.connectionId)
+              .then((resolved) =>
+                deletePagesDomain(
+                  resolved,
+                  params.accountId,
+                  params.project,
+                  domain.name,
+                ),
+              )
               .then(async () => {
                 invalidateComputeSnapshot();
                 showToast(t('compute.domainRemoved'));
-                await reload(bearer);
+                await reload();
               })
               .catch((cause) => {
                 showToast(cloudflareErrorMessage(cause), 'error');

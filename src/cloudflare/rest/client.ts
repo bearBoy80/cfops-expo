@@ -12,7 +12,8 @@ export type CloudflareApiErrorCode =
   | 'oauth-config'
   | 'session-expired'
   | 'identity'
-  | 'missing-credential';
+  | 'missing-credential'
+  | 'unsupported-key';
 
 const defaultMessages: Record<CloudflareApiErrorCode, string> = {
   'invalid-token': 'The API token is invalid or expired.',
@@ -25,6 +26,7 @@ const defaultMessages: Record<CloudflareApiErrorCode, string> = {
   'session-expired': 'The session has expired.',
   identity: 'Could not read the Cloudflare user identity.',
   'missing-credential': 'The stored credential is missing.',
+  'unsupported-key': 'This object key cannot be addressed through the API.',
 };
 
 export class CloudflareApiError extends Error {

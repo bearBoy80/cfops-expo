@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -245,6 +245,16 @@ export default function Home() {
     () => snapshot?.accounts.find((account) => account.id === scope) ?? null,
     [snapshot, scope],
   );
+
+  // The scoped account can disappear (its credential disconnected). Accounts
+  // stored on a connection are always in the snapshot, even when their calls
+  // fail, so a scope missing from it is gone for good: fall back to all
+  // accounts rather than filter every tab down to nothing.
+  useEffect(() => {
+    if (snapshot && scope !== null && !scopedAccount) {
+      setScope(null);
+    }
+  }, [scope, scopedAccount, setScope, snapshot]);
 
   const aggregate = useMemo(() => {
     if (!analytics || !analytics.available) {

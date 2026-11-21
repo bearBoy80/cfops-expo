@@ -232,6 +232,21 @@ export async function removeConnection(connectionId: string): Promise<void> {
   await SecureStore.deleteItemAsync(oauthKey(connectionId));
 }
 
+/**
+ * Deletes every stored credential: the connection list and each token or OAuth
+ * grant it points at. Used when the local account is reset, which must not
+ * leave Cloudflare access behind for whoever creates the next local password.
+ */
+export async function removeAllConnections(): Promise<void> {
+  const existing = await listConnections();
+  for (const connection of existing) {
+    await SecureStore.deleteItemAsync(tokenKey(connection.id));
+    await SecureStore.deleteItemAsync(oauthKey(connection.id));
+  }
+  await SecureStore.deleteItemAsync(CONNECTIONS_KEY);
+  connectionsCache = null;
+}
+
 export async function getConnectionToken(
   connectionId: string,
 ): Promise<string | null> {

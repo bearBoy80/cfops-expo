@@ -16,6 +16,7 @@ import {
   listAccounts,
   listD1Databases,
   listDnsRecords,
+  updateDnsRecord,
   listKvNamespaces,
   listPagesDomains,
   listPagesProjects,
@@ -320,6 +321,42 @@ describe('listDnsRecords', () => {
     expect(mockFetch.mock.calls[1][0]).toContain(
       '/zones/zone-1/dns_records?page=2&per_page=100',
     );
+  });
+
+  test('keeps the MX priority so an edit does not reset it', async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        success: true,
+        result: [
+          {
+            id: 'rec-mx',
+            type: 'MX',
+            name: 'acme.com',
+            content: 'mx.acme.com',
+            priority: 20,
+          },
+        ],
+      }),
+    );
+
+    const [record] = await listDnsRecords('secret', 'zone-1');
+    expect(record.priority).toBe(20);
+  });
+});
+
+describe('updateDnsRecord', () => {
+  test('patches only the edited fields so comments and tags survive', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ success: true, result: {} }));
+
+    await updateDnsRecord('secret', 'zone-1', 'rec-1', {
+      type: 'A',
+      name: 'a.acme.com',
+      content: '192.0.2.1',
+    });
+
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toContain('/zones/zone-1/dns_records/rec-1');
+    expect(init.method).toBe('PATCH');
   });
 });
 
@@ -1468,6 +1505,28 @@ describe('deleteR2Object', () => {
 
     expect(mockFetch.mock.calls[0][0]).toBe(
       `${base}/accounts/acc-1/r2/buckets/assets/objects/a/b/c/deep.txt`,
+    );
+  });
+
+  test.each(['logs/../config.json', './a.txt', 'a/./b', '..'])(
+    'refuses %s instead of addressing a collapsed path',
+    async (key) => {
+      // URL parsing collapses dot segments, so the request would act on a
+      // different object than the one the user picked.
+      await expect(
+        deleteR2Object('secret', 'acc-1', 'assets', key),
+      ).rejects.toMatchObject({ code: 'unsupported-key' });
+      expect(mockFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  test('still accepts dots that are not whole segments', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ success: true, result: {} }));
+
+    await deleteR2Object('secret', 'acc-1', 'assets', 'a/..b/.env');
+
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      `${base}/accounts/acc-1/r2/buckets/assets/objects/a/..b/.env`,
     );
   });
 });

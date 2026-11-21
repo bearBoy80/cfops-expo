@@ -30,6 +30,8 @@ import {
   type CloudflareConnection,
 } from '@/src/cloudflare/connections';
 import { invalidateAllSnapshots } from '@/src/cloudflare/cache';
+import { forgetOauthSessions } from '@/src/cloudflare/oauthSession';
+import { getAccountScope, setAccountScope } from '@/src/state/accountScope';
 import { getBearerForConnection } from '@/src/cloudflare/resources';
 import {
   AccountChip,
@@ -40,6 +42,7 @@ import {
   SegmentedControl,
   showActionMenu,
   ToggleRow,
+  useToast,
 } from '@/src/components/ui';
 import { useTabBarInset } from '@/src/components/useTabBarInset';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -94,6 +97,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { lock, reportAccountError } = useAuth();
+  const { showToast } = useToast();
   const { mode, colors, preference, setPreference } = useTheme();
   const bottomInset = useTabBarInset();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -157,10 +161,32 @@ export default function SettingsScreen() {
           label: t('settings.disconnect'),
           destructive: true,
           onPress: () => {
-            void removeConnection(connection.id).then(() => {
-              invalidateAllSnapshots();
-              return listConnections().then(setConnections);
-            });
+            void removeConnection(connection.id)
+              .then(async () => {
+                forgetOauthSessions(connection.id);
+                invalidateAllSnapshots();
+                const remaining = await listConnections();
+                // Drop a scope that pointed at an account only this
+                // credential could reach; every tab would filter to nothing.
+                const scope = getAccountScope();
+                if (
+                  scope !== null &&
+                  !remaining.some((item) =>
+                    item.accounts.some((account) => account.id === scope),
+                  )
+                ) {
+                  setAccountScope(null);
+                }
+                setConnections(remaining);
+              })
+              .catch(() => {
+                showToast(t('settings.disconnectError'), 'error');
+                // A partial removal may have changed the list; show what is
+                // actually stored now.
+                void listConnections()
+                  .then(setConnections)
+                  .catch(() => {});
+              });
           },
         },
       ],

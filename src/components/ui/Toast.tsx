@@ -12,7 +12,7 @@ import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { AlertCircle, CheckCircle2 } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
-import { accent, font, hairline, maxScale } from '../../theme/tokens';
+import { accent, font, hairline, maxScale, shadow } from '../../theme/tokens';
 import { haptics } from '../../utils/haptics';
 
 export type ToastKind = 'success' | 'error';
@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    shadowColor: '#000',
+    shadowColor: shadow.color,
     shadowOffset: { height: 6, width: 0 },
     shadowOpacity: 0.25,
     shadowRadius: 16,

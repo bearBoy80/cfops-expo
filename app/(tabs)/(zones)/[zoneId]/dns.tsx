@@ -62,6 +62,9 @@ const typeColors: Record<string, string> = {
 
 const proxyableTypes = new Set(['A', 'AAAA', 'CNAME']);
 
+/** Types the editor can round-trip; others (SRV, CAA, …) carry `data`. */
+const editableTypes = new Set<string>(recordTypes);
+
 interface EditorState {
   /** The record being edited, or null when creating a new one. */
   record: CfDnsRecord | null;
@@ -112,17 +115,25 @@ export default function ZoneDns() {
     void load();
   };
 
-  const openEditor = useCallback((record: CfDnsRecord | null) => {
-    setFieldErrors({});
-    setEditor({
-      record,
-      type: record?.type ?? 'A',
-      name: record?.name ?? '',
-      content: record?.content ?? '',
-      priority: '10',
-      proxied: record?.proxied ?? false,
-    });
-  }, []);
+  const openEditor = useCallback(
+    (record: CfDnsRecord | null) => {
+      if (record && !editableTypes.has(record.type)) {
+        showToast(t('dns.unsupportedType', { type: record.type }), 'error');
+        return;
+      }
+      setFieldErrors({});
+      setEditor({
+        record,
+        type: record?.type ?? 'A',
+        name: record?.name ?? '',
+        content: record?.content ?? '',
+        priority:
+          record?.priority !== undefined ? String(record.priority) : '10',
+        proxied: record?.proxied ?? false,
+      });
+    },
+    [showToast, t],
+  );
 
   /** Updates the draft and clears the stale error of the edited fields. */
   const patchEditor = (patch: Partial<EditorState>) => {
@@ -161,10 +172,15 @@ export default function ZoneDns() {
     };
     setSaving(true);
     const editing = editor.record !== null;
-    const action = editing
-      ? updateDnsRecord(bearer, params.zoneId, editor.record!.id, input)
-      : createDnsRecord(bearer, params.zoneId, input);
-    void action
+    const recordId = editor.record?.id;
+    // Resolved per action: the bearer from load time may be an OAuth access
+    // token that has expired since, and only this lookup renews it.
+    void getBearerForConnection(params.connectionId)
+      .then((resolved) =>
+        recordId !== undefined
+          ? updateDnsRecord(resolved, params.zoneId, recordId, input)
+          : createDnsRecord(resolved, params.zoneId, input),
+      )
       .then(() => {
         setEditor(null);
         refresh();
@@ -191,7 +207,10 @@ export default function ZoneDns() {
           destructive: true,
           onPress: () => {
             setSaving(true);
-            void deleteDnsRecord(bearer, params.zoneId, record.id)
+            void getBearerForConnection(params.connectionId)
+              .then((resolved) =>
+                deleteDnsRecord(resolved, params.zoneId, record.id),
+              )
               .then(() => {
                 setEditor(null);
                 refresh();

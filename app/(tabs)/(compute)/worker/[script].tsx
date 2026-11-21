@@ -172,9 +172,14 @@ export default function WorkerDetail() {
 
   /** Re-reads just the management blocks after changing one of them. */
   const reloadManagement = useCallback(
-    (resolved: string) =>
-      sequence((ifCurrent) => loadManagement(resolved, ifCurrent)),
-    [loadManagement, sequence],
+    () =>
+      sequence(async (ifCurrent) =>
+        loadManagement(
+          await getBearerForConnection(params.connectionId),
+          ifCurrent,
+        ),
+      ),
+    [loadManagement, params.connectionId, sequence],
   );
 
   useEffect(() => {
@@ -198,17 +203,20 @@ export default function WorkerDetail() {
           destructive: true,
           onPress: () => {
             setBusy(true);
-            void rollbackWorkerVersion(
-              bearer,
-              params.accountId,
-              params.script,
-              version.id,
-            )
+            void getBearerForConnection(params.connectionId)
+              .then((resolved) =>
+                rollbackWorkerVersion(
+                  resolved,
+                  params.accountId,
+                  params.script,
+                  version.id,
+                ),
+              )
               .then(async () => {
                 // The list row shows modifiedOn, which the rollback bumps.
                 invalidateComputeSnapshot();
                 showToast(t('compute.rollbackDone'));
-                await reloadManagement(bearer);
+                await reloadManagement();
               })
               .catch((cause) => {
                 showToast(cloudflareErrorMessage(cause), 'error');
@@ -227,7 +235,10 @@ export default function WorkerDetail() {
     const previous = subdomain;
     setSubdomain(next);
     setBusy(true);
-    void setWorkerSubdomainConfig(bearer, params.accountId, params.script, next)
+    void getBearerForConnection(params.connectionId)
+      .then((resolved) =>
+        setWorkerSubdomainConfig(resolved, params.accountId, params.script, next),
+      )
       .then(() => {
         showToast(t('compute.settingSaved'));
       })
@@ -257,15 +268,18 @@ export default function WorkerDetail() {
       return;
     }
     setBusy(true);
-    void attachWorkerDomain(bearer, params.accountId, {
-      zoneId: domainSheet.zoneId,
-      hostname,
-      service: params.script,
-    })
+    void getBearerForConnection(params.connectionId)
+      .then((resolved) =>
+        attachWorkerDomain(resolved, params.accountId, {
+          zoneId: domainSheet.zoneId,
+          hostname,
+          service: params.script,
+        }),
+      )
       .then(async () => {
         setDomainSheet(null);
         showToast(t('compute.domainAdded'));
-        await reloadManagement(bearer);
+        await reloadManagement();
       })
       .catch((cause) => {
         // Toasts render below RN modals, so surface the failure inline.
@@ -288,10 +302,13 @@ export default function WorkerDetail() {
           destructive: true,
           onPress: () => {
             setBusy(true);
-            void detachWorkerDomain(bearer, params.accountId, domain.id)
+            void getBearerForConnection(params.connectionId)
+              .then((resolved) =>
+                detachWorkerDomain(resolved, params.accountId, domain.id),
+              )
               .then(async () => {
                 showToast(t('compute.domainRemoved'));
-                await reloadManagement(bearer);
+                await reloadManagement();
               })
               .catch((cause) => {
                 showToast(cloudflareErrorMessage(cause), 'error');

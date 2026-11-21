@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { AppState, type AppStateStatus } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import { AuthGateProvider, useAuth } from '../AuthGate';
 import { resetAutoLock, suspendAutoLock } from '../autoLock';
 import {
@@ -221,4 +222,51 @@ test('surfaces corrupt storage and supports an explicit local reset', async () =
 
   expect(result.current.status).toBe('no-account');
   expect(mockStore.has('local-account-v2')).toBe(false);
+});
+
+test('reset also removes stored Cloudflare credentials', async () => {
+  mockStore.set('local-account-v2', '{"name":"JT"}');
+  mockStore.set(
+    'cf-connections-v1',
+    JSON.stringify([
+      { id: 'tok-1', label: 'Acme', authType: 'token', accounts: [], createdAt: 1 },
+    ]),
+  );
+  mockStore.set('cf-token-tok-1', 'secret-token');
+  const { result } = renderHook(() => useAuth(), { wrapper });
+  await waitFor(() => expect(result.current.status).toBe('error'));
+
+  await act(async () => result.current.resetAccount());
+
+  // The next local password must not inherit access to these tokens.
+  expect(result.current.status).toBe('no-account');
+  expect(mockStore.size).toBe(0);
+});
+
+test('retries an unreachable keychain when the app returns to the front', async () => {
+  await createAccount('JT', 'password', false);
+  jest
+    .mocked(SecureStore.getItemAsync)
+    .mockRejectedValueOnce(new Error('keychain locked'));
+  const { result } = renderHook(() => useAuth(), { wrapper });
+
+  await waitFor(() => expect(result.current.status).toBe('error'));
+
+  act(() => appStateListener?.('active'));
+
+  await waitFor(() => expect(result.current.status).toBe('locked'));
+  expect(mockStore.has('local-account-v2')).toBe(true);
+});
+
+test('offers a manual retry after a failed read', async () => {
+  await createAccount('JT', 'password', false);
+  jest
+    .mocked(SecureStore.getItemAsync)
+    .mockRejectedValueOnce(new Error('keychain locked'));
+  const { result } = renderHook(() => useAuth(), { wrapper });
+  await waitFor(() => expect(result.current.status).toBe('error'));
+
+  act(() => result.current.retry());
+
+  await waitFor(() => expect(result.current.status).toBe('locked'));
 });
