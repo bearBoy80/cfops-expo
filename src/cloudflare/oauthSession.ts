@@ -13,15 +13,21 @@ import { refreshOauthTokens, type OauthTokens } from './oauth';
 const REFRESH_MARGIN_MS = 60_000;
 
 /**
- * One in-flight renewal per connection.
+ * One in-flight lookup per connection, covering the keychain read *and* any
+ * renewal.
  *
  * Screens fan out over accounts with `Promise.all`, so a cold tab can ask for
  * the same bearer a dozen times at once. Cloudflare rotates the refresh token
  * on use, so parallel renewals would each spend a token the previous one had
  * already invalidated and all but one would fail — taking the stored grant with
  * them. Sharing the promise keeps it to a single exchange.
+ *
+ * The promise is registered before the first await. Registering it only once
+ * the tokens were read would let a caller whose read began before a renewal
+ * persisted, but finished after it, come back with the spent grant and no
+ * pending renewal to join — and refresh a second time with a dead token.
  */
-const inFlight = new Map<string, Promise<string>>();
+const inFlight = new Map<string, Promise<string | null>>();
 
 /**
  * Renewed grants that could not be written to the keychain.
@@ -104,7 +110,24 @@ async function renew(
  * reconnect. A renewal that never reached Cloudflare throws `network` instead,
  * which leaves the stored grant intact and is safe to retry.
  */
-export async function getOauthAccessToken(
+export function getOauthAccessToken(
+  connectionId: string,
+): Promise<string | null> {
+  const pending = inFlight.get(connectionId);
+  if (pending) {
+    return pending;
+  }
+
+  const task = resolveAccessToken(connectionId).finally(() => {
+    if (inFlight.get(connectionId) === task) {
+      inFlight.delete(connectionId);
+    }
+  });
+  inFlight.set(connectionId, task);
+  return task;
+}
+
+async function resolveAccessToken(
   connectionId: string,
 ): Promise<string | null> {
   const tokens = await loadTokens(connectionId);
@@ -117,22 +140,24 @@ export async function getOauthAccessToken(
   if (!tokens.refreshToken) {
     throw new CloudflareApiError('session-expired');
   }
+  return renew(connectionId, { ...tokens, refreshToken: tokens.refreshToken });
+}
 
-  const pending = inFlight.get(connectionId);
-  if (pending) {
-    return pending;
+/**
+ * Forgets renewal bookkeeping for connections whose grants were deleted, so a
+ * held-back renewal cannot outlive the credential it belonged to.
+ */
+export function forgetOauthSessions(connectionId?: string): void {
+  if (connectionId === undefined) {
+    inFlight.clear();
+    unpersisted.clear();
+    return;
   }
-
-  const renewable = { ...tokens, refreshToken: tokens.refreshToken };
-  const task = renew(connectionId, renewable).finally(() => {
-    inFlight.delete(connectionId);
-  });
-  inFlight.set(connectionId, task);
-  return task;
+  inFlight.delete(connectionId);
+  unpersisted.delete(connectionId);
 }
 
 /** Drops in-flight and unpersisted renewal bookkeeping. Test helper. */
 export function resetOauthSessions(): void {
-  inFlight.clear();
-  unpersisted.clear();
+  forgetOauthSessions();
 }

@@ -41,7 +41,7 @@
     "log": "log"
   },
   "errors": {
-    "account-unreadable": "The local account could not be read. Reset it to continue.",
+    "account-unreadable": "The local account could not be read. Try again, or reset it to continue.",
     "account-reset-failed": "The local account could not be reset. Please try again.",
     "invalid-token": "The API token is invalid or expired.",
     "forbidden": "The credential lacks permission for this resource. Add the missing permission to the token, or reconnect the account.",
@@ -53,6 +53,7 @@
     "session-expired": "The session has expired. Sign in again.",
     "identity": "Could not read the Cloudflare user identity.",
     "missing-credential": "The stored credential is missing.",
+    "unsupported-key": "This object's key contains a \".\" or \"..\" path segment, which the API cannot address. Manage it from the Cloudflare dashboard.",
     "zone-load": "Could not load this zone."
   },
   "authInput": {
@@ -79,8 +80,9 @@
   },
   "accountError": {
     "title": "Local account unavailable",
+    "retry": "Try Again",
     "reset": "Reset Local Account",
-    "warning": "This removes only the app login on this device."
+    "warning": "Resetting removes the app login and every connected Cloudflare credential on this device."
   },
   "onboarding": {
     "loadingA11y": "Loading onboarding progress",
@@ -272,6 +274,7 @@
     "proxiedLabel": "Proxy through Cloudflare",
     "save": "Save Changes",
     "deleteRecord": "Delete Record",
+    "unsupportedType": "{{type}} records can't be edited in the app yet. Use the Cloudflare dashboard.",
     "deleteConfirm": "Delete the {{type}} record \"{{name}}\"?",
     "validation": "Name and content are required.",
     "createdToast": "DNS record created.",
@@ -351,7 +354,8 @@
     "disconnectCredential": "Disconnect this credential",
     "disconnectMessage": "Remove \"{{label}}\" and its API token from this device?",
     "disconnectMessageMulti": "Remove \"{{label}}\" from this device? All {{count}} accounts this credential covers will lose access.",
-    "disconnect": "Disconnect"
+    "disconnect": "Disconnect",
+    "disconnectError": "Could not disconnect the credential. Please try again."
   },
   "language": {
     "title": "Language",

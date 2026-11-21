@@ -23,6 +23,7 @@ import {
   getConnectionOauthTokens,
   getConnectionToken,
   listConnections,
+  removeAllConnections,
   removeConnection,
   resetConnectionsCache,
 } from '../connections';
@@ -84,6 +85,21 @@ test('removes the connection and its token', async () => {
 
   await expect(listConnections()).resolves.toEqual([]);
   await expect(getConnectionToken('tok-1')).resolves.toBeNull();
+});
+
+test('removing all connections deletes every token and grant', async () => {
+  await addConnection('secret-token');
+  await addOauthConnection(
+    { accessToken: 'oauth-access', refreshToken: 'oauth-refresh' },
+    { sub: 'user-1', email: 'ops@example.com' },
+  );
+
+  await removeAllConnections();
+
+  await expect(listConnections()).resolves.toEqual([]);
+  await expect(getConnectionToken('tok-1')).resolves.toBeNull();
+  await expect(getConnectionOauthTokens('oauth-user-1')).resolves.toBeNull();
+  expect(mockStore.size).toBe(0);
 });
 
 test('treats corrupt metadata as empty', async () => {

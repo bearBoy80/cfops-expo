@@ -185,9 +185,14 @@ export default function R2BucketDetail() {
 
   /** Re-reads just the access settings after changing one of them. */
   const reloadAccess = useCallback(
-    (resolved: string) =>
-      sequence((ifCurrent) => loadAccess(resolved, ifCurrent)),
-    [loadAccess, sequence],
+    () =>
+      sequence(async (ifCurrent) =>
+        loadAccess(
+          await getBearerForConnection(params.connectionId),
+          ifCurrent,
+        ),
+      ),
+    [loadAccess, params.connectionId, sequence],
   );
 
   useEffect(() => {
@@ -215,7 +220,10 @@ export default function R2BucketDetail() {
     const previous = managed;
     setManaged({ domain: managed?.domain ?? '', enabled });
     setBusy(true);
-    void setR2ManagedDomain(bearer, params.accountId, params.bucket, enabled)
+    void getBearerForConnection(params.connectionId)
+      .then((resolved) =>
+        setR2ManagedDomain(resolved, params.accountId, params.bucket, enabled),
+      )
       .then(() => {
         showToast(t('storage.settingSaved'));
       })
@@ -240,14 +248,17 @@ export default function R2BucketDetail() {
       return;
     }
     setBusy(true);
-    void addR2CustomDomain(bearer, params.accountId, params.bucket, {
-      domain,
-      zoneId: domainSheet.zoneId,
-    })
+    void getBearerForConnection(params.connectionId)
+      .then((resolved) =>
+        addR2CustomDomain(resolved, params.accountId, params.bucket, {
+          domain,
+          zoneId: domainSheet.zoneId,
+        }),
+      )
       .then(async () => {
         setDomainSheet(null);
         showToast(t('storage.domainAdded'));
-        await reloadAccess(bearer);
+        await reloadAccess();
       })
       .catch((cause) => {
         setDomainError(cloudflareErrorMessage(cause));
@@ -269,15 +280,18 @@ export default function R2BucketDetail() {
           destructive: true,
           onPress: () => {
             setBusy(true);
-            void deleteR2CustomDomain(
-              bearer,
-              params.accountId,
-              params.bucket,
-              domain.domain,
-            )
+            void getBearerForConnection(params.connectionId)
+              .then((resolved) =>
+                deleteR2CustomDomain(
+                  resolved,
+                  params.accountId,
+                  params.bucket,
+                  domain.domain,
+                ),
+              )
               .then(async () => {
                 showToast(t('storage.domainRemoved'));
-                await reloadAccess(bearer);
+                await reloadAccess();
               })
               .catch((cause) => {
                 showToast(cloudflareErrorMessage(cause), 'error');
@@ -318,7 +332,10 @@ export default function R2BucketDetail() {
       return;
     }
     setBusy(true);
-    void deleteR2Objects(bearer, params.accountId, params.bucket, keys)
+    void getBearerForConnection(params.connectionId)
+      .then((resolved) =>
+        deleteR2Objects(resolved, params.accountId, params.bucket, keys),
+      )
       .then((outcome) => {
         // Only clear what actually went away, so a retry keeps the failures
         // selected instead of silently dropping them.
@@ -412,7 +429,10 @@ export default function R2BucketDetail() {
           destructive: true,
           onPress: () => {
             setBusy(true);
-            void deleteR2Bucket(bearer, params.accountId, params.bucket)
+            void getBearerForConnection(params.connectionId)
+              .then((resolved) =>
+                deleteR2Bucket(resolved, params.accountId, params.bucket),
+              )
               .then(() => {
                 invalidateStorageSnapshot();
                 invalidateStorageMetrics(params.accountId);

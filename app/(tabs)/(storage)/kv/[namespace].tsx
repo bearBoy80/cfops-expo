@@ -228,7 +228,10 @@ export default function KvNamespaceDetail() {
       return;
     }
     setBusy(true);
-    void deleteKvKeys(bearer, params.accountId, params.namespace, names)
+    void getBearerForConnection(params.connectionId)
+      .then((resolved) =>
+        deleteKvKeys(resolved, params.accountId, params.namespace, names),
+      )
       .then((outcome) => {
         // Only clear what actually went away, so a retry keeps the failures
         // selected instead of silently dropping them.
@@ -283,7 +286,10 @@ export default function KvNamespaceDetail() {
       error: null,
       keyError: null,
     });
-    void getKvEntries(bearer, params.accountId, params.namespace, [name])
+    void getBearerForConnection(params.connectionId)
+      .then((resolved) =>
+        getKvEntries(resolved, params.accountId, params.namespace, [name]),
+      )
       .then((entries) => {
         const entry = entries.get(name) ?? {
           value: '',
@@ -322,12 +328,15 @@ export default function KvNamespaceDetail() {
       }
     }
     setBusy(true);
-    void putKvValue(bearer, params.accountId, params.namespace, {
-      key,
-      value,
-      metadata: entry?.metadata,
-      expiration: entry?.expiration,
-    })
+    void getBearerForConnection(params.connectionId)
+      .then((resolved) =>
+        putKvValue(resolved, params.accountId, params.namespace, {
+          key,
+          value,
+          metadata: entry?.metadata,
+          expiration: entry?.expiration,
+        }),
+      )
       .then(() => {
         setSheet(null);
         invalidateStorageMetrics(params.accountId);

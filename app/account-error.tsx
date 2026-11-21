@@ -14,7 +14,7 @@ import {
 
 export default function AccountError() {
   const { t } = useTranslation();
-  const { errorKey, resetAccount } = useAuth();
+  const { errorKey, resetAccount, retry } = useAuth();
   const { colors, mode } = useTheme();
 
   return (
@@ -34,12 +34,29 @@ export default function AccountError() {
         <Text style={[styles.message, { color: label(mode, 0.55) }]}>
           {errorKey ? t(errorKey) : null}
         </Text>
+        {/* A failed read is often the keychain being briefly unreachable, so
+            the harmless option comes first and the reset stays secondary. */}
+        <Pressable
+          accessibilityRole="button"
+          onPress={retry}
+          style={[styles.button, { backgroundColor: accent.orange }]}
+          testID="account-error-retry"
+        >
+          <Text style={[styles.buttonText, { color: foreground.onAccent }]}>
+            {t('accountError.retry')}
+          </Text>
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           onPress={() => void resetAccount()}
-          style={[styles.button, { backgroundColor: accent.red }]}
+          style={[
+            styles.button,
+            styles.secondaryButton,
+            { backgroundColor: tint(accent.red, '22') },
+          ]}
+          testID="account-error-reset"
         >
-          <Text style={[styles.buttonText, { color: foreground.onAccent }]}>
+          <Text style={[styles.buttonText, { color: accent.red }]}>
             {t('accountError.reset')}
           </Text>
         </Pressable>
@@ -59,6 +76,9 @@ const styles = StyleSheet.create({
     marginTop: 22,
     minHeight: 52,
     paddingHorizontal: 20,
+  },
+  secondaryButton: {
+    marginTop: 12,
   },
   buttonText: {
     ...fontFace('bodyLarge', '700'),

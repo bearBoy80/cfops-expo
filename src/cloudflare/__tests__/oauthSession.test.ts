@@ -175,6 +175,31 @@ test('shares one renewal across concurrent callers', async () => {
   expect(refreshOauthTokens).toHaveBeenCalledTimes(1);
 });
 
+test('a caller whose keychain read outlives a renewal joins it instead of refreshing again', async () => {
+  const expired = stored({ expiresAt: Date.now() - HOUR });
+  let releaseSlowRead: (value: ReturnType<typeof stored>) => void = () => {};
+  let reads = 0;
+  jest.mocked(getConnectionOauthTokens).mockImplementation(() => {
+    reads += 1;
+    // Any read after the first started before the renewal persisted and
+    // answers after it settled, so it still holds the spent refresh token.
+    return reads === 1
+      ? Promise.resolve(expired)
+      : new Promise((resolve) => {
+          releaseSlowRead = resolve;
+        });
+  });
+
+  const first = getOauthAccessToken('oauth-1');
+  const second = getOauthAccessToken('oauth-1');
+  await expect(first).resolves.toBe('fresh-access');
+  releaseSlowRead(expired);
+
+  await expect(second).resolves.toBe('fresh-access');
+  expect(refreshOauthTokens).toHaveBeenCalledTimes(1);
+  expect(getConnectionOauthTokens).toHaveBeenCalledTimes(1);
+});
+
 test('renews each connection independently', async () => {
   jest
     .mocked(getConnectionOauthTokens)

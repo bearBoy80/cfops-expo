@@ -19,6 +19,8 @@ export interface CfDnsRecord {
   content: string;
   proxied: boolean;
   ttl: number;
+  /** Present on MX (and SRV/URI) records. */
+  priority?: number;
 }
 
 /** Maximum the `dns_records` endpoint accepts. */
@@ -35,6 +37,7 @@ export async function listDnsRecords(
     content?: string;
     proxied?: boolean;
     ttl?: number;
+    priority?: number;
   }>(
     (page) =>
       `/zones/${zoneId}/dns_records?page=${page}&per_page=${RECORDS_PER_PAGE}`,
@@ -47,6 +50,7 @@ export async function listDnsRecords(
     content: record.content ?? '',
     proxied: record.proxied ?? false,
     ttl: record.ttl ?? 1,
+    priority: record.priority,
   }));
 }
 
@@ -71,6 +75,11 @@ export async function createDnsRecord(
   });
 }
 
+/**
+ * Updates the fields the editor owns. PATCH rather than PUT: PUT overwrites the
+ * whole record and would wipe the comment, tags and any `data` the app does not
+ * edit.
+ */
 export async function updateDnsRecord(
   token: string,
   zoneId: string,
@@ -78,7 +87,7 @@ export async function updateDnsRecord(
   input: DnsRecordInput,
 ): Promise<void> {
   await request(`/zones/${zoneId}/dns_records/${recordId}`, token, {
-    method: 'PUT',
+    method: 'PATCH',
     body: input,
   });
 }

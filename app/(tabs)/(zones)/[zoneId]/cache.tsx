@@ -57,7 +57,9 @@ export default function ZoneCache() {
   const confirmPurge = () => {
     confirmPurgeCache(t, params.name, () => {
       setBusy(true);
-      void purgeZoneCache(bearer ?? '', params.zoneId)
+      // Resolved per action so an expired OAuth access token is renewed.
+      void getBearerForConnection(params.connectionId)
+        .then((resolved) => purgeZoneCache(resolved, params.zoneId))
         .then(() => setPurged(true))
         .catch((cause) => {
           showToast(cloudflareErrorMessage(cause), 'error');

@@ -1,5 +1,5 @@
 import { mapLimit } from '../../utils/concurrency';
-import { request } from './client';
+import { CloudflareApiError, request } from './client';
 
 export interface CfR2Bucket {
   name: string;
@@ -74,7 +74,15 @@ export async function listR2Objects(
  * and address the wrong object, so each segment is encoded on its own.
  */
 function encodeObjectKey(key: string): string {
-  return key.split('/').map(encodeURIComponent).join('/');
+  const segments = key.split('/');
+  // URL parsing collapses `.` and `..` segments — percent-encoded or not — so
+  // `logs/../config.json` would be sent as `config.json` and act on a
+  // different object. There is no path form that reaches such a key, so it is
+  // refused rather than risk deleting the wrong thing.
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    throw new CloudflareApiError('unsupported-key');
+  }
+  return segments.map(encodeURIComponent).join('/');
 }
 
 export async function deleteR2Object(
